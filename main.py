@@ -12,22 +12,6 @@ from train_model import train, validate
 from utils import set_seed, DataArgument,generate_prediction_scores
 import wandb
 
-parser = argparse.ArgumentParser(description='Train a predictor model on stock data')
-
-parser.add_argument('--num_epochs', type=int, default=3, help='number of epochs to train for')
-parser.add_argument('--lr', type=float, default=0.0005, help='learning rate')
-parser.add_argument('--batch_size', type=int, default=300, help='batch size')
-parser.add_argument('--feat_dim', type=int, default=20, help='features dimension')
-parser.add_argument('--seq_len', type=int, default=20, help='sequence length')
-parser.add_argument('--factor_dim', type=int, default=10, help='number of factors')
-parser.add_argument('--hidden_dim', type=int, default=20, help='hidden variables dimension')
-parser.add_argument('--seed', type=int, default=42, help='random seed')
-parser.add_argument('--run_name', type=str, default="InvariantStock", help='name of the run')
-parser.add_argument('--save_dir', type=str, default='./best_models', help='directory to save model')
-parser.add_argument('--wandb', action='store_true', help='whether to use wandb')
-parser.add_argument('--normalize', action='store_true', help='whether to normalize the data')
-parser.add_argument('--device', default="cuda:0",type=str, help='devices')
-args = parser.parse_args()
 
 def rankic(df):
     ic = df.groupby('datetime').apply(lambda df: df["label"].corr(df["pred"]))
@@ -43,25 +27,11 @@ def rankic(df):
 
 
 
-data_args = DataArgument(use_qlib=False, normalize=True, select_feature=False)
-args.save_dir = args.save_dir+"/"+str(args.factor_dim)
-        
-dataset = pd.read_pickle(f"{data_args.save_dir}/usdataset_norm.pkl")
 
-
-
-train_index = np.load(f"{data_args.save_dir}/train_index.npy")
-valid_index = np.load(f"{data_args.save_dir}/valid_index.npy")
-test_index = np.load(f"{data_args.save_dir}/test_index.npy")
-
-args.feat_dim = len(dataset.columns)-1
-if args.wandb:
-    wandb.init(project="InvariantStock", config=args, name=f"{args.run_name}")
-    wandb.config.update(args)
 
 def add_env(date,df):
     month = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec",]
-    begin_year = 2024
+    begin_year = 2020
     end_year = 2024
     year = [str(i) for i in range(begin_year,end_year+1)]
     df[month]=0
@@ -77,9 +47,6 @@ def multi_add_env(dataset):
     results = [i for i in results if i is not None]
     return pd.concat(results)
 
-dataset = multi_add_env(dataset)
-dataset = dataset.astype("float")
-args.env_size = len(dataset.columns) - args.feat_dim - 1
 
 def main(args):
 
@@ -186,4 +153,39 @@ def main(args):
         wandb.finish()
 
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(description='Train a predictor model on stock data')
+
+    parser.add_argument('--num_epochs', type=int, default=3, help='number of epochs to train for')
+    parser.add_argument('--lr', type=float, default=0.0005, help='learning rate')
+    parser.add_argument('--batch_size', type=int, default=300, help='batch size')
+    parser.add_argument('--feat_dim', type=int, default=20, help='features dimension')
+    parser.add_argument('--seq_len', type=int, default=20, help='sequence length')
+    parser.add_argument('--factor_dim', type=int, default=10, help='number of factors')
+    parser.add_argument('--hidden_dim', type=int, default=20, help='hidden variables dimension')
+    parser.add_argument('--seed', type=int, default=42, help='random seed')
+    parser.add_argument('--run_name', type=str, default="InvariantStock", help='name of the run')
+    parser.add_argument('--save_dir', type=str, default='./best_models', help='directory to save model')
+    parser.add_argument('--wandb', action='store_true', help='whether to use wandb')
+    parser.add_argument('--normalize', action='store_true', help='whether to normalize the data')
+    parser.add_argument('--device', default="cuda:0", type=str, help='devices')
+    args = parser.parse_args()
+
+    data_args = DataArgument(use_qlib=False, normalize=True, select_feature=False)
+    args.save_dir = args.save_dir + "/" + str(args.factor_dim)
+
+    dataset = pd.read_pickle(f"{data_args.save_dir}/usdataset_norm.pkl")
+
+    train_index = np.load(f"{data_args.save_dir}/train_index.npy")
+    valid_index = np.load(f"{data_args.save_dir}/valid_index.npy")
+    test_index = np.load(f"{data_args.save_dir}/test_index.npy")
+
+    args.feat_dim = len(dataset.columns) - 1
+    if args.wandb:
+        wandb.init(project="InvariantStock", config=args, name=f"{args.run_name}")
+        wandb.config.update(args)
+
+    dataset = multi_add_env(dataset)
+    dataset = dataset.astype("float")
+    args.env_size = len(dataset.columns) - args.feat_dim - 1
+
     main(args)
