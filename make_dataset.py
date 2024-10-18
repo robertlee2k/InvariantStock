@@ -20,7 +20,7 @@ def norm(df_tuple):
     df = df_tuple[1]
     mean = df.mean()
     std = df.std()
-    df = (df-mean)/std 
+    df = (df-mean)/std
     return df
 def multi_normalize(df_list):
     pool = multiprocessing.Pool()
@@ -30,26 +30,7 @@ def multi_normalize(df_list):
     pool.join()
     return df
 
-args = parse_arguments()
-
-if not os.path.exists(args.data_dir):
-    os.makedirs(args.data_dir)
-
-dataset = pd.read_pickle(os.path.join(args.data_dir,"usdataset.pkl"))
-dataset.set_index(["datetime","instrument"],inplace=True)
-
-dataset[dataset.columns.drop("label")] = multi_normalize([*dataset[dataset.columns.drop("label")].groupby("datetime")])
-
-train_range = range(0,len(dataset.loc[dataset.index.get_level_values("datetime")<=pd.to_datetime(args.train_date)]))
-valid_range = range(len(dataset.loc[dataset.index.get_level_values("datetime")<=pd.to_datetime(args.train_date)]),len(dataset.loc[dataset.index.get_level_values("datetime")<=pd.to_datetime(args.valid_date)]))
-test_range = range(len(dataset.loc[dataset.index.get_level_values("datetime")<=pd.to_datetime(args.valid_date)]),len(dataset))
-
-
-dataset.to_pickle(os.path.join(args.data_dir,"usdataset_norm.pkl"))
-
-
-date_list = list(dataset.index.get_level_values("datetime").unique())
-def get_index(index):
+def get_index(dataset, date_list, index):
     sequence_length = 20
     date, stock = dataset.index[index]
     if date>date_list[-sequence_length]:
@@ -58,24 +39,53 @@ def get_index(index):
     idx_list = [(date_list[i],stock) for i in date_seq]
     if not all(i in dataset.index for i in idx_list):
         return None
-    
+
     return np.stack([dataset.index.get_indexer(idx_list)])
 
-def multi_get_index(index_list):
+def multi_get_index(dataset, date_list, index_list):
     pool = multiprocessing.Pool()
-    results = pool.map(get_index, index_list)
+    results = pool.starmap(get_index, [(dataset, date_list, index) for index in index_list])
     pool.close()
     pool.join()
     results = [i for i in results if i is not None]
     return np.stack(results)
 
-train_index = multi_get_index([i for i in train_range])
-np.save(os.path.join(args.data_dir,"train_index.npy"),np.squeeze(train_index))
-valid_index = multi_get_index([i for i in valid_range])
-np.save(os.path.join(args.data_dir,"valid_index.npy"),np.squeeze(valid_index))
-test_index = multi_get_index([i for i in test_range])
-np.save(os.path.join(args.data_dir,"test_index.npy"),np.squeeze(test_index))
 
+if __name__ == '__main__':
+    args = parse_arguments()
 
-print("Success!")
+    if not os.path.exists(args.data_dir):
+        os.makedirs(args.data_dir)
+
+    dataset = pd.read_pickle(os.path.join(args.data_dir, "usdataset.pkl"))
+    dataset.set_index(["datetime", "instrument"], inplace=True)
+
+    # Convert datetime index to Timestamp
+    dataset.index = dataset.index.set_levels(pd.to_datetime(dataset.index.levels[0]), level=0)
+
+    dataset[dataset.columns.drop("label")] = multi_normalize(
+        [*dataset[dataset.columns.drop("label")].groupby("datetime")])
+
+    train_date = pd.to_datetime(args.train_date)
+    valid_date = pd.to_datetime(args.valid_date)
+    test_date = pd.to_datetime(args.test_date)
+
+    train_range = range(0, len(dataset.loc[dataset.index.get_level_values("datetime") <= train_date]))
+    valid_range = range(len(dataset.loc[dataset.index.get_level_values("datetime") <= train_date]),
+                        len(dataset.loc[dataset.index.get_level_values("datetime") <= valid_date]))
+    test_range = range(len(dataset.loc[dataset.index.get_level_values("datetime") <= valid_date]),
+                       len(dataset))
+
+    dataset.to_pickle(os.path.join(args.data_dir, "usdataset_norm.pkl"))
+
+    date_list = list(dataset.index.get_level_values("datetime").unique())
+
+    train_index = multi_get_index(dataset, date_list, [i for i in train_range])
+    np.save(os.path.join(args.data_dir, "train_index.npy"), np.squeeze(train_index))
+    valid_index = multi_get_index(dataset, date_list, [i for i in valid_range])
+    np.save(os.path.join(args.data_dir, "valid_index.npy"), np.squeeze(valid_index))
+    test_index = multi_get_index(dataset, date_list, [i for i in test_range])
+    np.save(os.path.join(args.data_dir, "test_index.npy"), np.squeeze(test_index))
+
+    print("Success!")
 
