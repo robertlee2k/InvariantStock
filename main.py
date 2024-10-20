@@ -11,12 +11,12 @@ from Layers import FeatureReconstructor, Predictor, FeatureMask, FeatureExtracto
 from dataset import StockDataset, DynamicBatchSampler
 from train_model import train, validate
 from utils import set_seed, DataArgument, generate_prediction_scores
-import wandb
+# import wandb
 
 
 def rankic(df):
-    ic = df.groupby('datetime').apply(lambda df: df["label"].corr(df["pred"]))
-    ric = df.groupby('datetime').apply(lambda df: df["label"].corr(df["pred"], method="spearman"))
+    ic = df.groupby('date').apply(lambda df: df["label"].corr(df["pred"]))
+    ric = df.groupby('date').apply(lambda df: df["label"].corr(df["pred"], method="spearman"))
 
     print({
         "IC": ic.mean(),
@@ -34,14 +34,14 @@ def add_env(date, df):
     year = [str(i) for i in range(begin_year, end_year + 1)]
     df[month] = 0
     df[year] = 0
-    df.loc[df.index.get_level_values("datetime") == date, month[date.month - 1]] = 1
-    df.loc[df.index.get_level_values("datetime") == date, year[date.year - begin_year]] = 1
+    df.loc[df.index.get_level_values("date") == date, month[date.month - 1]] = 1
+    df.loc[df.index.get_level_values("date") == date, year[date.year - begin_year]] = 1
     return df
 
 
 def multi_add_env(dataset):
     pool = multiprocessing.Pool()
-    results = pool.starmap(add_env, [*dataset.groupby("datetime")])
+    results = pool.starmap(add_env, [*dataset.groupby("date")])
     pool.close()
     pool.join()
     results = [i for i in results if i is not None]
@@ -83,7 +83,7 @@ def main(args):
     train_ds = StockDataset(dataset, train_index)
     valid_ds = StockDataset(dataset, valid_index)
     test_ds = StockDataset(dataset, valid_index)
-
+    print(train_index.shape)
     train_batch_sizes = pd.DataFrame([i[0] for i in dataset.index[train_index[:, 0]].values]).value_counts(
         sort=False).values
     train_batch_sampler = DynamicBatchSampler(train_ds, train_batch_sizes)
@@ -131,19 +131,19 @@ def main(args):
               {"Validation Toal Loss": round(val_loss, 6), "Validation Pred Loss": round(val_pred_loss, 6),
                "Validation Ranking Loss": round(val_rank_loss, 6), "Validation KL Loss": round(val_kl_loss, 6),
                "Validation RankIC": round(avg_rankic, 6)})
-        if args.wandb:
-            wandb.log({"Validation Toal Loss": val_loss, "Validation Pred Loss": val_pred_loss,
-                       "Validation Ranking Loss": val_rank_loss, "Validation KL Loss": val_kl_loss,
-                       "Validation RankIC": avg_rankic}, step=epoch)
-            if path == 0:
-                wandb.log({"Different Loss": diff_loss, "Self Reconstruction Loss": self_pred_loss,
-                           "Reconstruction Diff Loss": recon_diff_loss, "KL Diff Loss": kl_diff_loss}, step=epoch)
-            elif path in [1]:
-                wandb.log({"No Env Loss": train_loss, "No Env Pred Loss": pred_loss, "No Env Ranking Loss": rank_loss,
-                           "No Env KL Loss": kl_loss}, step=epoch)
-            elif path in [2]:
-                wandb.log({"With Env Loss": env_loss, "With Env Pred Loss": env_pred_loss,
-                           "With Env Ranking Loss": env_rank_loss, "With Env KL Loss": env_kl_loss}, step=epoch)
+        # if args.wandb:
+        #     wandb.log({"Validation Toal Loss": val_loss, "Validation Pred Loss": val_pred_loss,
+        #                "Validation Ranking Loss": val_rank_loss, "Validation KL Loss": val_kl_loss,
+        #                "Validation RankIC": avg_rankic}, step=epoch)
+        #     if path == 0:
+        #         wandb.log({"Different Loss": diff_loss, "Self Reconstruction Loss": self_pred_loss,
+        #                    "Reconstruction Diff Loss": recon_diff_loss, "KL Diff Loss": kl_diff_loss}, step=epoch)
+        #     elif path in [1]:
+        #         wandb.log({"No Env Loss": train_loss, "No Env Pred Loss": pred_loss, "No Env Ranking Loss": rank_loss,
+        #                    "No Env KL Loss": kl_loss}, step=epoch)
+        #     elif path in [2]:
+        #         wandb.log({"With Env Loss": env_loss, "With Env Pred Loss": env_pred_loss,
+        #                    "With Env Ranking Loss": env_rank_loss, "With Env KL Loss": env_kl_loss}, step=epoch)
 
         if path == 0:
             print(f"Epoch {epoch + 1}: ",
@@ -176,9 +176,9 @@ def main(args):
     print("Test Result:")
     rankic(output)
 
-    if args.wandb:
-        wandb.log({"Best Validation RankIC": best_rankic})
-        wandb.finish()
+    # if args.wandb:
+    #     wandb.log({"Best Validation RankIC": best_rankic})
+    #     wandb.finish()
 
 
 if __name__ == '__main__':
@@ -204,14 +204,14 @@ if __name__ == '__main__':
 
     dataset = pd.read_pickle(f"{data_args.save_dir}/adataset_norm.pkl")
 
-    train_index = np.load(f"{data_args.save_dir}/train_index.npy")
-    valid_index = np.load(f"{data_args.save_dir}/valid_index.npy")
-    test_index = np.load(f"{data_args.save_dir}/test_index.npy")
+    train_index = np.load(f"{data_args.save_dir}/train_index.npy", allow_pickle=True)
+    valid_index = np.load(f"{data_args.save_dir}/valid_index.npy", allow_pickle=True)
+    test_index = np.load(f"{data_args.save_dir}/test_index.npy", allow_pickle=True)
 
     args.feat_dim = len(dataset.columns) - 1
-    if args.wandb:
-        wandb.init(project="InvariantStock", config=args, name=f"{args.run_name}")
-        wandb.config.update(args)
+    # if args.wandb:
+    #     wandb.init(project="InvariantStock", config=args, name=f"{args.run_name}")
+    #     wandb.config.update(args)
 
     dataset = multi_add_env(dataset)
     dataset = dataset.astype("float")

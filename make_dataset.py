@@ -120,9 +120,9 @@ if __name__ == '__main__':
     print(test_index)
 
     # 将索引转换为 NumPy 数组并保存
-    np.save(os.path.join(args.data_dir, "train_index.npy"), train_index.values)
-    np.save(os.path.join(args.data_dir, "valid_index.npy"), valid_index.values)
-    np.save(os.path.join(args.data_dir, "test_index.npy"), test_index.values)
+    np.save(os.path.join(args.data_dir, "train_index.npy"), np.squeeze(train_index))
+    np.save(os.path.join(args.data_dir, "valid_index.npy"), np.squeeze(valid_index))
+    np.save(os.path.join(args.data_dir, "test_index.npy"), np.squeeze(test_index))
 
     print("Success!")
 
