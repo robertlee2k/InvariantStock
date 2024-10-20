@@ -29,7 +29,7 @@ def rankic(df):
 
 def add_env(date, df):
     month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", ]
-    begin_year = 2020
+    begin_year = 2013
     end_year = 2024
     year = [str(i) for i in range(begin_year, end_year + 1)]
     df[month] = 0
