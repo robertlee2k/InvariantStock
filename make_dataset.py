@@ -6,6 +6,7 @@ from dataclasses import dataclass
 import multiprocessing
 from multiprocessing import Pool, Manager
 from tqdm import tqdm
+from functools import partial
 
 # Define argparse
 def parse_arguments():
@@ -31,34 +32,6 @@ def multi_normalize(df_list):
     pool.close()
     pool.join()
     return df
-
-def get_index(shared_dataset, date_list, index, columns):
-    sequence_length = 20
-    dataset = pd.DataFrame(list(shared_dataset), columns=columns)
-    date, stock = dataset.index[index]
-    if date > date_list[-sequence_length]:
-        return None
-    date_seq = range(date_list.index(date), date_list.index(date) + sequence_length)
-    idx_list = [(date_list[i], stock) for i in date_seq]
-    if not all(i in dataset.index for i in idx_list):
-        return None
-
-    return np.stack([dataset.index.get_indexer(idx_list)])
-
-def multi_get_index(dataset, date_list, index_list, batch_size=10000):
-    with Manager() as manager:
-        shared_dataset = manager.list(dataset.values.tolist())
-        columns = dataset.columns.tolist()
-        results = []
-
-        # 将索引分成批次
-        for i in tqdm(range(0, len(index_list), batch_size)):
-            batch_indices = index_list[i:i + batch_size]
-            with Pool() as pool:
-                batch_results = pool.starmap(get_index, [(shared_dataset, date_list, index, columns) for index in batch_indices])
-                results.extend([r for r in batch_results if r is not None])  # 过滤掉None值
-
-        return np.stack(results) if results else np.array([])  # 返回结果
 
 if __name__ == '__main__':
 
@@ -140,20 +113,16 @@ if __name__ == '__main__':
     valid_date = pd.to_datetime(args.valid_date)
     test_date = pd.to_datetime(args.test_date)
 
-    train_range = range(0, len(dataset.loc[dataset.index.get_level_values("date") <= train_date]))
-    valid_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= train_date]),
-                        len(dataset.loc[dataset.index.get_level_values("date") <= valid_date]))
-    test_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= valid_date]),
-                       len(dataset))
+    # 切分索引
+    train_index = dataset.index[dataset.index.get_level_values("date") <= train_date]
+    valid_index = dataset.index[(dataset.index.get_level_values("date") > train_date) & (dataset.index.get_level_values("date") <= valid_date)]
+    test_index = dataset.index[dataset.index.get_level_values("date") > valid_date]
+    print(test_index)
 
-    date_list = list(dataset.index.get_level_values("date").unique())
-
-    train_index = multi_get_index(dataset, date_list, [i for i in train_range])
-    np.save(os.path.join(args.data_dir, "train_index.npy"), np.squeeze(train_index))
-    valid_index = multi_get_index(dataset, date_list, [i for i in valid_range])
-    np.save(os.path.join(args.data_dir, "valid_index.npy"), np.squeeze(valid_index))
-    test_index = multi_get_index(dataset, date_list, [i for i in test_range])
-    np.save(os.path.join(args.data_dir, "test_index.npy"), np.squeeze(test_index))
+    # 将索引转换为 NumPy 数组并保存
+    np.save(os.path.join(args.data_dir, "train_index.npy"), train_index.values)
+    np.save(os.path.join(args.data_dir, "valid_index.npy"), valid_index.values)
+    np.save(os.path.join(args.data_dir, "test_index.npy"), test_index.values)
 
     print("Success!")
 
