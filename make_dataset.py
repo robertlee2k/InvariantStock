@@ -45,7 +45,7 @@ def get_index(shared_dataset, date_list, index, columns):
 
     return np.stack([dataset.index.get_indexer(idx_list)])
 
-def multi_get_index(dataset, date_list, index_list, batch_size=1000):
+def multi_get_index(dataset, date_list, index_list, batch_size=10000):
     with Manager() as manager:
         shared_dataset = manager.list(dataset.values.tolist())
         columns = dataset.columns.tolist()
@@ -60,8 +60,17 @@ def multi_get_index(dataset, date_list, index_list, batch_size=1000):
 
         return np.stack(results) if results else np.array([])  # 返回结果
 
-
 if __name__ == '__main__':
+
+    # 处理多种空值情况
+    def convert_to_float_or_zero(x):
+        if pd.isna(x) or str(x).strip() == "":
+            return 0
+        try:
+            return float(x)
+        except ValueError:
+            return 0
+
     args = parse_arguments()
 
     if not os.path.exists(args.data_dir):
@@ -84,12 +93,38 @@ if __name__ == '__main__':
             dfs.append(df)
         dataset = pd.concat(dfs)
 
+        # 使用 apply 方法进行向量化操作
+        dataset['turn'] = dataset['turn'].apply(convert_to_float_or_zero)
+
+        # 根据原始数据计算“流通市值”和“流通股本”
+        # 如果'turn’ 不为零，流通股本 = volumn/turn
+        # 流通市值 = 流通股本* close
+        dataset['Circulated Shares'] = dataset.apply(
+            lambda row: row['volume'] / row['turn'] if row['turn'] != 0 else None, axis=1)
+        dataset['Circulated Market Value'] = dataset['Circulated Shares'] * dataset['close']
+
         # 设置索引
         dataset.set_index(['date', 'code'], inplace=True)
-
+        # 把dataset按日期升序排序
+        dataset = dataset.sort_values(by='date', ascending=True)
         # 添加'label'字段
         dataset['label'] = dataset.groupby('code')['pctChg'].shift(-1)
-        dataset.dropna(subset=['label'], inplace=True)
+
+        # 筛选出将要被前向填充的行
+        rows_to_fill = dataset[dataset.isna().any(axis=1)]
+        # # 保存将要被前向填充的行到CSV文件
+        # rows_to_fill.to_csv('data/rows_to_fill_na.csv', index=False)
+        # 处理缺失值
+        dataset = dataset.groupby('code').ffill()
+
+        # 检查数据集中是否仍有NA值
+        if dataset.isna().any().any():
+            print("数据集中有以下行包含NA值：")
+            print(dataset[dataset.isna().any(axis=1)])
+
+            # 删除包含NA值的行
+            dataset.dropna(inplace=True)
+            print("已删除包含NA值的行")
 
         # Convert datetime index to Timestamp
         dataset.index = dataset.index.set_levels(pd.to_datetime(dataset.index.levels[0]), level=0)
@@ -97,10 +132,8 @@ if __name__ == '__main__':
         dataset[dataset.columns.drop("label")] = multi_normalize(
             [*dataset[dataset.columns.drop("label")].groupby("date")])
 
-        dataset.to_pickle(os.path.join(args.data_dir, pickle_file))
+        dataset.to_pickle(pickle_file)
 
-    # 把dataset按日期升序排序
-    dataset = dataset.sort_values(by='date', ascending=True)
     print(dataset)
 
     train_date = pd.to_datetime(args.train_date)
