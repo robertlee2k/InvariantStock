@@ -202,7 +202,7 @@ if __name__ == '__main__':
     data_args = DataArgument(use_qlib=False, normalize=True, select_feature=False)
     args.save_dir = args.save_dir + "/" + str(args.factor_dim)
 
-    dataset = pd.read_pickle(f"{data_args.save_dir}/usdataset_norm.pkl")
+    dataset = pd.read_pickle(f"{data_args.save_dir}/adataset_norm.pkl")
 
     train_index = np.load(f"{data_args.save_dir}/train_index.npy")
     valid_index = np.load(f"{data_args.save_dir}/valid_index.npy")

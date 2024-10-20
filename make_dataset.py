@@ -5,6 +5,7 @@ import numpy as np
 from dataclasses import dataclass
 import multiprocessing
 from multiprocessing import Pool, Manager
+from tqdm import tqdm
 
 # Define argparse
 def parse_arguments():
@@ -31,39 +32,40 @@ def multi_normalize(df_list):
     pool.join()
     return df
 
-def get_index(dataset, date_list, index):
+def get_index(shared_dataset, date_list, index, columns):
     sequence_length = 20
+    dataset = pd.DataFrame(list(shared_dataset), columns=columns)
     date, stock = dataset.index[index]
-    if date>date_list[-sequence_length]:
+    if date > date_list[-sequence_length]:
         return None
-    date_seq = range(date_list.index(date),date_list.index(date)+ sequence_length)
-    idx_list = [(date_list[i],stock) for i in date_seq]
+    date_seq = range(date_list.index(date), date_list.index(date) + sequence_length)
+    idx_list = [(date_list[i], stock) for i in date_seq]
     if not all(i in dataset.index for i in idx_list):
         return None
 
     return np.stack([dataset.index.get_indexer(idx_list)])
 
-def multi_get_index(dataset, date_list, index_list):
-    # pool = multiprocessing.Pool()
-    # results = pool.starmap(get_index, [(dataset, date_list, index) for index in index_list])
-    # pool.close()
-    # pool.join()
-    # results = [i for i in results if i is not None]
-    # return np.stack(results)
+def multi_get_index(dataset, date_list, index_list, batch_size=1000):
     with Manager() as manager:
-        shared_dataset = manager.list(dataset)  # 创建共享数据集
-        with Pool() as pool:
-            results = pool.starmap(get_index, [(shared_dataset, date_list, index) for index in index_list])
-        return results
+        shared_dataset = manager.list(dataset.values.tolist())
+        columns = dataset.columns.tolist()
+        results = []
+
+        # 将索引分成批次
+        for i in tqdm(range(0, len(index_list), batch_size)):
+            batch_indices = index_list[i:i + batch_size]
+            with Pool() as pool:
+                batch_results = pool.starmap(get_index, [(shared_dataset, date_list, index, columns) for index in batch_indices])
+                results.extend([r for r in batch_results if r is not None])  # 过滤掉None值
+
+        return np.stack(results) if results else np.array([])  # 返回结果
+
 
 if __name__ == '__main__':
     args = parse_arguments()
 
     if not os.path.exists(args.data_dir):
         os.makedirs(args.data_dir)
-
-    # dataset = pd.read_pickle(os.path.join(args.data_dir, "usdataset.pkl"))
-    # dataset.set_index(["datetime", "instrument"], inplace=True)
 
     pickle_file = os.path.join(args.data_dir, "adataset_norm.pkl")
 
@@ -81,7 +83,6 @@ if __name__ == '__main__':
             df = pd.read_csv(file, encoding='gbk')
             dfs.append(df)
         dataset = pd.concat(dfs)
-        print(dataset)
 
         # 设置索引
         dataset.set_index(['date', 'code'], inplace=True)
@@ -96,17 +97,21 @@ if __name__ == '__main__':
         dataset[dataset.columns.drop("label")] = multi_normalize(
             [*dataset[dataset.columns.drop("label")].groupby("date")])
 
-        train_date = pd.to_datetime(args.train_date)
-        valid_date = pd.to_datetime(args.valid_date)
-        test_date = pd.to_datetime(args.test_date)
-
-        train_range = range(0, len(dataset.loc[dataset.index.get_level_values("date") <= train_date]))
-        valid_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= train_date]),
-                            len(dataset.loc[dataset.index.get_level_values("date") <= valid_date]))
-        test_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= valid_date]),
-                           len(dataset))
-
         dataset.to_pickle(os.path.join(args.data_dir, pickle_file))
+
+    # 把dataset按日期升序排序
+    dataset = dataset.sort_values(by='date', ascending=True)
+    print(dataset)
+
+    train_date = pd.to_datetime(args.train_date)
+    valid_date = pd.to_datetime(args.valid_date)
+    test_date = pd.to_datetime(args.test_date)
+
+    train_range = range(0, len(dataset.loc[dataset.index.get_level_values("date") <= train_date]))
+    valid_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= train_date]),
+                        len(dataset.loc[dataset.index.get_level_values("date") <= valid_date]))
+    test_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= valid_date]),
+                       len(dataset))
 
     date_list = list(dataset.index.get_level_values("date").unique())
 
