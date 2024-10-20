@@ -35,8 +35,7 @@ for index, row in selected_stocks.iterrows():
     stock_code = row['code']
     stock_name = row['code_name']
     rs = bs.query_history_k_data_plus(stock_code,
-                                      fields="""date,code,open,high,low,close,volume,amount,adjustflag,turn,
-                                        tradestatus,pctChg,isST,peTTM,pbMRQ,psTTM,pcfNcfTTM""",
+                                      "date,code,open,high,low,close,volume,amount,adjustflag,turn,tradestatus,pctChg,isST,peTTM,pbMRQ,psTTM,pcfNcfTTM",
                                       start_date=period_begin, end_date=period_end,
                                       frequency="d", adjustflag="1")  # 复权类型，默认不复权：3；1：后复权；2：前复权。
 
