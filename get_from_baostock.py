@@ -2,7 +2,7 @@ import baostock as bs
 import pandas as pd
 import os
 import time
-from multiprocessing import Pool, Manager
+from multiprocessing import Pool
 from concurrent.futures import ThreadPoolExecutor
 from tqdm import tqdm
 import numpy as np
@@ -158,7 +158,11 @@ class StockDataFetcher:
 
 
         # 使用groupby和ffill填充缺失值，并保留原来的'code'列
-        full_dataset = full_dataset.groupby('code').apply(lambda group: group.ffill()).reset_index(drop=True)
+        # 排除 'date' 和 'code' 列
+        columns_to_apply = full_dataset.drop(columns=['date', 'code']).columns
+        # 使用 groupby 和 apply
+        full_dataset[columns_to_apply] = full_dataset.groupby('code')[columns_to_apply].apply(lambda group: group.ffill()).reset_index(
+            drop=True)
 
         # 检查数据集中是否仍有NA值
         if full_dataset.isna().any().any():
