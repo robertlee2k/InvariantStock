@@ -96,8 +96,9 @@ def multi_get_index(index_list, dataset, date_list, batch_size=10000):
 
         # 将所有批次的结果堆叠成一个数组
         if final_results:
-            print(f'最终输出结果大小为: {len(final_results)}')
-            return np.concatenate(final_results)
+            sorted_results = np.sort(final_results)
+            print(f'最终输出结果大小为: {sorted_results.shape}')
+            return sorted_results
         else:
             return np.array([])
 
