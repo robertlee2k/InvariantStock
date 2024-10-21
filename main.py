@@ -22,9 +22,6 @@ def rankic(df):
     # 检查并处理缺失值
     if df[['label', 'pred']].isnull().any().any():
         print("检测到缺失值，正在处理...")
-        na_df = df[df[['label', 'pred']].isnull().any(axis=1)]
-        na_df.to_csv('na-values.csv', index=False)
-        print(f"缺失值已保存到 na-values.csv")
         df = df.dropna(subset=['label', 'pred'])
         print("缺失值处理完成，数据框的前几行:")
         print(df.head())
@@ -98,31 +95,6 @@ def multi_add_env(dataset):
     return pd.concat(results)
 
 
-# 打印并保存 npy 文件的前100条内容到 CSV 文件
-def print_and_save_npy_to_csv(data, csv_file, dataset_index):
-    try:
-        print(f"data shape is : {data.shape}")
-
-        # 获取前100条数据
-        top_100 = data[:100]
-        print(f" top 100 raw data : {top_100}")
-
-        # 将索引转换为日期和股票代码
-        top_100_indices = [[(idx, dataset_index[idx][0], dataset_index[idx][1]) for idx in row] for row in top_100]
-
-        # 创建 DataFrame
-        df = pd.DataFrame(top_100_indices, columns=[f"Index_{i}" for i in range(top_100.shape[1])])
-
-        # 打印前100条数据
-        print(f"Top 100 rows of file  :")
-        print(df.head(100))
-
-        # 保存到 CSV 文件
-        df.to_csv(csv_file, index=True)
-        print(f"Saved top 100 rows to {csv_file}")
-
-    except Exception as e:
-        print(f"Error in print_and_save_npy_to_csv: {e}")
 
 def main(args):
     set_seed(args.seed)
@@ -282,15 +254,24 @@ if __name__ == '__main__':
     args.save_dir = args.save_dir + "/" + str(args.factor_dim)
 
     dataset = pd.read_pickle(f"{data_args.save_dir}/adataset-norm.pkl")
+    # 打印包含 NaN 值的列名
+    columns_with_nan = dataset.columns[dataset.isna().any()].tolist()
+    print("包含 NaN 值的列名:", columns_with_nan)
+    # 删除包含 NaN 值的列
+    dataset = dataset.drop(columns=columns_with_nan)
+
+    # 打印删除后的数据集的前几行
+    print("删除包含 NaN 值的列后的数据集，再看看有没有NaN值:")
+    # 打印包含 NaN 值的行
+    rows_with_nan = dataset[dataset.isna().any(axis=1)]
+    print("包含 NaN 值的行采样几条输出：")
+    print(rows_with_nan)
+
 
     train_index = np.load(f"{data_args.save_dir}/train_index.npy", allow_pickle=True)
     valid_index = np.load(f"{data_args.save_dir}/valid_index.npy", allow_pickle=True)
     test_index = np.load(f"{data_args.save_dir}/test_index.npy", allow_pickle=True)
 
-    # 打印并保存前100条内容到 CSV 文件
-    print_and_save_npy_to_csv(train_index, f'{data_args.save_dir}/train_top_100.csv', dataset.index)
-    print_and_save_npy_to_csv(valid_index, f'{data_args.save_dir}/val_top_100.csv', dataset.index)
-    print_and_save_npy_to_csv(test_index, f'{data_args.save_dir}/test_top_100.csv', dataset.index)
 
 
     args.feat_dim = len(dataset.columns) - 1

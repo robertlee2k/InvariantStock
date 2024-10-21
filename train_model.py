@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from tqdm.auto import tqdm
+import pandas as pd
 
 def train(feature_reconstructor,feature_mask,factorVAE,env_factorVAE, train_dataloader, featrue_optimizer, optimizer, env_optimizer,featrue_scheduler,scheduler,env_scheduler,args,epoch=0):
     device = args.device
@@ -36,6 +37,14 @@ def train(feature_reconstructor,feature_mask,factorVAE,env_factorVAE, train_data
 
             if torch.isnan(inputs).any():
                 print("注意！！！Inputs contain NaN values")
+                # 将包含 NaN 值的行输出到 na-values.csv
+                # 展平 inputs 到二维张量
+                inputs_flattened = inputs.view(inputs.size(0), -1)
+                nan_mask = torch.any(torch.isnan(inputs_flattened), dim=1)
+                nan_rows = inputs[nan_mask]
+                nan_rows_df = pd.DataFrame(nan_rows.cpu().numpy().reshape(nan_rows.size(0), -1))
+                nan_rows_df.to_csv('input-na-values.csv', index=False)
+
             if torch.isnan(labels).any():
                 print("注意！！！Labels contain NaN values")
 
