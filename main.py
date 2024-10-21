@@ -15,16 +15,66 @@ from utils import set_seed, DataArgument, generate_prediction_scores
 
 
 def rankic(df):
+    # 打印原始数据框的前几行
+    print("原始数据框的前几行:")
+    print(df.head())
+
+    # 检查并处理缺失值
+    if df[['label', 'pred']].isnull().any().any():
+        print("检测到缺失值，正在处理...")
+        na_df = df[df[['label', 'pred']].isnull().any(axis=1)]
+        na_df.to_csv('na-values.csv', index=False)
+        print(f"缺失值已保存到 na-values.csv")
+        df = df.dropna(subset=['label', 'pred'])
+        print("缺失值处理完成，数据框的前几行:")
+        print(df.head())
+    else:
+        print("未检测到缺失值")
+
+    # 确保数据类型为数值
+    df['label'] = df['label'].astype(float)
+    df['pred'] = df['pred'].astype(float)
+    print("数据类型转换完成，数据框的前几行:")
+    print(df.head())
+
+    # 确保每个日期至少有两行数据
+    date_counts = df['date'].value_counts()
+    if (date_counts < 2).any():
+        valid_dates = date_counts[date_counts >= 2].index
+        df = df[df['date'].isin(valid_dates)]
+        print("确保每个日期至少有两行数据，少于两行的日期drop掉了")
+    else:
+        print("所有日期都有至少两行数据，无需过滤")
+
+    # 检查数据是否恒定
+    def check_constant(df):
+        if df['label'].nunique() == 1 or df['pred'].nunique() == 1:
+            return False
+        return True
+
+    filtered_df = df.groupby('date').filter(check_constant)
+    if len(df) != len(filtered_df):
+        df = filtered_df
+        print("发现有日期的数据恒定，已做过滤，数据框的前几行:")
+        print(df.head())
+    else:
+        print("所有日期的数据都不恒定，无需过滤")
+
+    # 计算 IC 和 Rank IC
     ic = df.groupby('date').apply(lambda df: df["label"].corr(df["pred"]))
     ric = df.groupby('date').apply(lambda df: df["label"].corr(df["pred"], method="spearman"))
 
+    # 输出结果
+    print("计算结果:")
     print({
         "IC": ic.mean(),
         "ICIR": ic.mean() / ic.std(),
         "Rank IC": ric.mean(),
         "Rank ICIR": ric.mean() / ric.std(),
     })
+
     return ric
+
 
 
 def add_env(date, df):
@@ -47,6 +97,32 @@ def multi_add_env(dataset):
     results = [i for i in results if i is not None]
     return pd.concat(results)
 
+
+# 打印并保存 npy 文件的前100条内容到 CSV 文件
+def print_and_save_npy_to_csv(data, csv_file, dataset_index):
+    try:
+        print(f"data shape is : {data.shape}")
+
+        # 获取前100条数据
+        top_100 = data[:100]
+        print(f" top 100 raw data : {top_100}")
+
+        # 将索引转换为日期和股票代码
+        top_100_indices = [[(idx, dataset_index[idx][0], dataset_index[idx][1]) for idx in row] for row in top_100]
+
+        # 创建 DataFrame
+        df = pd.DataFrame(top_100_indices, columns=[f"Index_{i}" for i in range(top_100.shape[1])])
+
+        # 打印前100条数据
+        print(f"Top 100 rows of file  :")
+        print(df.head(100))
+
+        # 保存到 CSV 文件
+        df.to_csv(csv_file, index=True)
+        print(f"Saved top 100 rows to {csv_file}")
+
+    except Exception as e:
+        print(f"Error in print_and_save_npy_to_csv: {e}")
 
 def main(args):
     set_seed(args.seed)
@@ -184,7 +260,7 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a predictor model on stock data')
 
-    parser.add_argument('--num_epochs', type=int, default=3, help='number of epochs to train for')
+    parser.add_argument('--num_epochs', type=int, default=9, help='number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.0005, help='learning rate')
     parser.add_argument('--batch_size', type=int, default=300, help='batch size')
     parser.add_argument('--feat_dim', type=int, default=20, help='features dimension')
@@ -192,7 +268,7 @@ if __name__ == '__main__':
     parser.add_argument('--factor_dim', type=int, default=10, help='number of factors')
     parser.add_argument('--hidden_dim', type=int, default=20, help='hidden variables dimension')
     parser.add_argument('--seed', type=int, default=42, help='random seed')
-    parser.add_argument('--run_name', type=str, default="InvariantStock", help='name of the run')
+    parser.add_argument('--run_name', type=str, default="Invariant", help='name of the run')
     parser.add_argument('--save_dir', type=str, default='./best_models', help='directory to save model')
     parser.add_argument('--wandb', action='store_true', help='whether to use wandb')
     parser.add_argument('--normalize', action='store_true', help='whether to normalize the data')
@@ -202,11 +278,17 @@ if __name__ == '__main__':
     data_args = DataArgument(use_qlib=False, normalize=True, select_feature=False)
     args.save_dir = args.save_dir + "/" + str(args.factor_dim)
 
-    dataset = pd.read_pickle(f"{data_args.save_dir}/adataset_norm.pkl")
+    dataset = pd.read_pickle(f"{data_args.save_dir}/adataset-norm.pkl")
 
     train_index = np.load(f"{data_args.save_dir}/train_index.npy", allow_pickle=True)
     valid_index = np.load(f"{data_args.save_dir}/valid_index.npy", allow_pickle=True)
     test_index = np.load(f"{data_args.save_dir}/test_index.npy", allow_pickle=True)
+
+    # 打印并保存前100条内容到 CSV 文件
+    print_and_save_npy_to_csv(train_index, f'{data_args.save_dir}/train_top_100.csv', dataset.index)
+    print_and_save_npy_to_csv(valid_index, f'{data_args.save_dir}/val_top_100.csv', dataset.index)
+    print_and_save_npy_to_csv(test_index, f'{data_args.save_dir}/test_top_100.csv', dataset.index)
+
 
     args.feat_dim = len(dataset.columns) - 1
     # if args.wandb:
