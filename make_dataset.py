@@ -8,7 +8,7 @@ from tqdm import tqdm
 
 def get_index(index,dataset,date_list):
     try:
-        print(f"getting training index for {index}")
+        # print(f"getting training index for {index}")
         sequence_length = 20
         date, stock = dataset.index[index]
         if date > date_list[-sequence_length]:
@@ -23,13 +23,18 @@ def get_index(index,dataset,date_list):
         return None
 
 
-def multi_get_index(index_list, dataset,date_list, num_threads=4):
+def multi_get_index(index_list, dataset,date_list):
     try:
+        # 获取 CPU 核心数并设置线程数为 CPU 核心数减 1
+        num_threads = max(1, os.cpu_count() - 1)
+        print(f"Using {num_threads} threads for parallel processing.")
+
         results = []
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             print("Submitting tasks...")
             # 提交任务并获取未来对象
-            futures = {executor.submit(get_index, index,dataset,date_list): index for index in index_list}
+            futures = {executor.submit(get_index, index,dataset,date_list): index for index in tqdm(index_list, desc="Submitting tasks")}
+
             print("Waiting tasks complete...")
             # 获取结果并显示进度条
             for future in tqdm(as_completed(futures), total=len(futures), desc="Processing indices"):
