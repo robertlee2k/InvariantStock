@@ -126,7 +126,7 @@ def main(args):
             optimizer, env_optimizer, featrue_scheduler, scheduler, env_scheduler, args, epoch=epoch)
         val_loss, val_pred_loss, val_rank_loss, val_kl_loss, avg_rankic = validate(feature_mask, predictor,
                                                                                    valid_dataloader, args)
-        path = path = epoch % 3
+        path = epoch % 3
         print(f"Epoch {epoch + 1}: ",
               {"Validation Toal Loss": round(val_loss, 6), "Validation Pred Loss": round(val_pred_loss, 6),
                "Validation Ranking Loss": round(val_rank_loss, 6), "Validation KL Loss": round(val_kl_loss, 6),

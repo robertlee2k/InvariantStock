@@ -6,7 +6,6 @@ from dataclasses import dataclass
 import multiprocessing
 from multiprocessing import Pool, Manager
 from tqdm import tqdm
-from functools import partial
 
 # Define argparse
 def parse_arguments():
@@ -33,95 +32,56 @@ def multi_normalize(df_list):
     pool.join()
     return df
 
-if __name__ == '__main__':
+args = parse_arguments()
+if not os.path.exists(args.data_dir):
+    os.makedirs(args.data_dir)
 
-    # 处理多种空值情况
-    def convert_to_float_or_zero(x):
-        if pd.isna(x) or str(x).strip() == "":
-            return 0
-        try:
-            return float(x)
-        except ValueError:
-            return 0
+pickle_file = os.path.join(args.data_dir, "adataset-norm.pkl")
 
-    args = parse_arguments()
+# 直接加载Pickle文件
+dataset = pd.read_pickle(pickle_file)
 
-    if not os.path.exists(args.data_dir):
-        os.makedirs(args.data_dir)
+print(dataset)
 
-    pickle_file = os.path.join(args.data_dir, "adataset_norm.pkl")
+def get_index(index):
+    sequence_length = 20
+    date, stock = dataset.index[index]
+    if date > date_list[-sequence_length]:
+        return None
+    date_seq = range(date_list.index(date), date_list.index(date) + sequence_length)
+    idx_list = [(date_list[i], stock) for i in date_seq]
+    if not all(i in dataset.index for i in idx_list):
+        return None
 
-    if os.path.exists(pickle_file):
-        # 直接加载Pickle文件
-        dataset = pd.read_pickle(pickle_file)
-    else:
-        # 从data/history/目录读取所有的CSV文件
-        history_dir = os.path.join(args.data_dir, 'history')
-        csv_files = [os.path.join(history_dir, f) for f in os.listdir(history_dir) if f.endswith('.csv')]
+    return np.stack([dataset.index.get_indexer(idx_list)])
 
-        # 读取并拼接所有CSV文件
-        dfs = []
-        for file in csv_files:
-            df = pd.read_csv(file, encoding='gbk')
-            dfs.append(df)
-        dataset = pd.concat(dfs)
 
-        # 使用 apply 方法进行向量化操作
-        dataset['turn'] = dataset['turn'].apply(convert_to_float_or_zero)
+def multi_get_index(index_list):
+    pool = multiprocessing.Pool()
+    results = pool.map(get_index, index_list)
+    pool.close()
+    pool.join()
+    results = [i for i in results if i is not None]
+    return np.stack(results)
 
-        # 根据原始数据计算“流通市值”和“流通股本”
-        # 如果'turn’ 不为零，流通股本 = volumn/turn
-        # 流通市值 = 流通股本* close
-        dataset['Circulated Shares'] = dataset.apply(
-            lambda row: row['volume'] / row['turn'] if row['turn'] != 0 else None, axis=1)
-        dataset['Circulated Market Value'] = dataset['Circulated Shares'] * dataset['close']
-
-        # 设置索引
-        dataset.set_index(['date', 'code'], inplace=True)
-        # 把dataset按日期升序排序
-        dataset = dataset.sort_values(by='date', ascending=True)
-        # 添加'label'字段
-        dataset['label'] = dataset.groupby('code')['pctChg'].shift(-1)
-
-        # 筛选出将要被前向填充的行
-        rows_to_fill = dataset[dataset.isna().any(axis=1)]
-        # # 保存将要被前向填充的行到CSV文件
-        # rows_to_fill.to_csv('data/rows_to_fill_na.csv', index=False)
-        # 处理缺失值
-        dataset = dataset.groupby('code').ffill()
-
-        # 检查数据集中是否仍有NA值
-        if dataset.isna().any().any():
-            print("数据集中有以下行包含NA值：")
-            print(dataset[dataset.isna().any(axis=1)])
-
-            # 删除包含NA值的行
-            dataset.dropna(inplace=True)
-            print("已删除包含NA值的行")
-
-        # Convert datetime index to Timestamp
-        dataset.index = dataset.index.set_levels(pd.to_datetime(dataset.index.levels[0]), level=0)
-
-        dataset[dataset.columns.drop("label")] = multi_normalize(
-            [*dataset[dataset.columns.drop("label")].groupby("date")])
-
-        dataset.to_pickle(pickle_file)
-
-    print(dataset)
-
+if __name__ == "__main__":
     train_date = pd.to_datetime(args.train_date)
     valid_date = pd.to_datetime(args.valid_date)
     test_date = pd.to_datetime(args.test_date)
 
-    # 切分索引
-    train_index = dataset.index[dataset.index.get_level_values("date") <= train_date]
-    valid_index = dataset.index[(dataset.index.get_level_values("date") > train_date) & (dataset.index.get_level_values("date") <= valid_date)]
-    test_index = dataset.index[dataset.index.get_level_values("date") > valid_date]
-    print(test_index)
+    train_range = range(0, len(dataset.loc[dataset.index.get_level_values("date") <= train_date]))
+    valid_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= train_date]),
+                        len(dataset.loc[dataset.index.get_level_values("date") <= valid_date]))
+    test_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= valid_date]),
+                       len(dataset))
 
-    # 将索引转换为 NumPy 数组并保存
+    date_list = list(dataset.index.get_level_values("date").unique())
+
+    train_index = multi_get_index([i for i in train_range])
     np.save(os.path.join(args.data_dir, "train_index.npy"), np.squeeze(train_index))
+    valid_index = multi_get_index([i for i in valid_range])
     np.save(os.path.join(args.data_dir, "valid_index.npy"), np.squeeze(valid_index))
+    test_index = multi_get_index([i for i in test_range])
     np.save(os.path.join(args.data_dir, "test_index.npy"), np.squeeze(test_index))
 
     print("Success!")
