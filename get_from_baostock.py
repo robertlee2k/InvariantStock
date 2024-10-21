@@ -1,26 +1,32 @@
-import baostock as bs
-import pandas as pd
 import os
 import time
-from multiprocessing import Pool
 from concurrent.futures import ThreadPoolExecutor
-from tqdm import tqdm
-import numpy as np
 
-def norm(df_tuple):
-    df = df_tuple[1]
+import baostock as bs
+import numpy as np
+import pandas as pd
+from tqdm import tqdm
+
+
+def norm(df):
     mean = df.mean()
     std = df.std()
-    df = (df-mean)/std
+    df = (df - mean) / std
     return df
 
-def multi_normalize(df_list):
-    pool = Pool()
-    results = pool.map(norm, df_list)
-    df = pd.concat(results)
-    pool.close()
-    pool.join()
-    return df
+
+def multi_normalize(df_list, num_threads=4):
+    # 创建线程池
+    with ThreadPoolExecutor(max_workers=num_threads) as executor:
+        # 提交任务并获取未来对象
+        futures = [executor.submit(norm, df) for _, df in df_list]
+
+        # 获取结果
+        results = [future.result() for future in futures]
+
+    # 将结果重新组合成一个数据框
+    normalized_df = pd.concat(results)
+    return normalized_df
 
 
 class StockDataFetcher:
@@ -51,12 +57,12 @@ class StockDataFetcher:
             result = pd.DataFrame(data_list, columns=rs.fields)
             result.to_csv(stock_basic_csv, encoding="gbk", index=False)
         else:
-            result=pd.read_csv(stock_basic_csv,encoding='gbk')
+            result = pd.read_csv(stock_basic_csv, encoding='gbk')
 
         selected_stocks = result[(result['type'] == '1')]
         return selected_stocks
 
-    def fetch_history_k_data(self,target_stock_codes,stock_history_dir):
+    def fetch_history_k_data(self, target_stock_codes, stock_history_dir):
         if not os.path.exists(stock_history_dir):
             os.makedirs(stock_history_dir)
 
@@ -89,6 +95,7 @@ class StockDataFetcher:
                 print(f'股票{stock_name}获取日线错误：{rs.error_msg}')
 
             time.sleep(0.1)
+
     @staticmethod
     def convert_to_float_or_zero(series):
         # 预处理空值和空白字符串
@@ -111,14 +118,15 @@ class StockDataFetcher:
         return pd.read_csv(file_path, encoding='gbk')
 
     @staticmethod
-    def prepare_dataset(history_dir,pickle_file,need_norm=True):
+    def prepare_dataset(history_dir, pickle_file, need_norm=True):
         # 从data/history/目录读取所有的CSV文件
         csv_files = [os.path.join(history_dir, f) for f in os.listdir(history_dir) if f.endswith('.csv')]
 
         # 使用线程池并行读取文件
         with ThreadPoolExecutor() as executor:
             # 使用 tqdm 包装 executor.map 以显示进度条
-            dfs = list(tqdm(executor.map(StockDataFetcher.read_csv_file, csv_files), total=len(csv_files), desc="读取文件进度"))
+            dfs = list(tqdm(executor.map(StockDataFetcher.read_csv_file, csv_files), total=len(csv_files),
+                            desc="读取文件进度"))
 
         # 合并所有数据框
         full_dataset = pd.concat(dfs, ignore_index=True)
@@ -132,10 +140,11 @@ class StockDataFetcher:
         # 根据原始数据计算“流通市值”和“流通股本”
         # 如果'turn’ 不为零，流通股本 = volumn/turn
         # 流通市值 = 流通股本* close
-        #full_dataset['Circulated Shares'] = full_dataset.apply(
+        # full_dataset['Circulated Shares'] = full_dataset.apply(
         #    lambda row: row['volume'] / row['turn'] if row['turn'] != 0 else None, axis=1)
         # 对于大规模的df，使用 pandas 的 where 方法 会比apply更快
-        full_dataset['Circulated Shares'] = (full_dataset['volume'] / full_dataset['turn']).where(full_dataset['turn'] != 0, np.nan)
+        full_dataset['Circulated Shares'] = (full_dataset['volume'] / full_dataset['turn']).where(
+            full_dataset['turn'] != 0, np.nan)
         full_dataset['Circulated Market Value'] = full_dataset['Circulated Shares'] * full_dataset['close']
 
         print("转换日期为Timestamp类型.....")
@@ -156,12 +165,12 @@ class StockDataFetcher:
         # # 保存将要被前向填充的行到CSV文件
         # rows_to_fill.to_csv('data/rows_to_fill_na.csv', index=False)
 
-
         # 使用groupby和ffill填充缺失值，并保留原来的'code'列
         # 排除 'date' 和 'code' 列
         columns_to_apply = full_dataset.drop(columns=['date', 'code']).columns
         # 使用 groupby 和 apply
-        full_dataset[columns_to_apply] = full_dataset.groupby('code')[columns_to_apply].apply(lambda group: group.ffill()).reset_index(
+        full_dataset[columns_to_apply] = full_dataset.groupby('code')[columns_to_apply].apply(
+            lambda group: group.ffill()).reset_index(
             drop=True)
 
         # 检查数据集中是否仍有NA值
@@ -175,7 +184,7 @@ class StockDataFetcher:
 
         print("把dataset重新按日期、code升序排序....")
         # 把dataset按日期、code升序排序
-        full_dataset = full_dataset.sort_values(by=['date','code'], ascending=True)
+        full_dataset = full_dataset.sort_values(by=['date', 'code'], ascending=True)
 
         print("在清理好的数据上，设置复合索引.....")
         # 设置索引
@@ -195,18 +204,17 @@ def main():
     fetcher = StockDataFetcher()
     fetcher.login()
 
-    stock_basic_csv="data/stock_basic.csv"
+    stock_basic_csv = "data/stock_basic.csv"
     selected_stocks = fetcher.fetch_stock_basic(stock_basic_csv)
 
-    stock_history_dir="data/history"
+    stock_history_dir = "data/history"
     if not os.path.exists(stock_history_dir):
-        fetcher.fetch_history_k_data(selected_stocks,stock_history_dir)
+        fetcher.fetch_history_k_data(selected_stocks, stock_history_dir)
+    fetcher.logout()
 
     pickle_file = "data/adataset-norm.pkl"
     if not os.path.exists(pickle_file):
-        fetcher.prepare_dataset(stock_history_dir,pickle_file, need_norm=True)
-
-    fetcher.logout()
+        fetcher.prepare_dataset(stock_history_dir, pickle_file, need_norm=True)
 
 
 if __name__ == "__main__":
