@@ -195,9 +195,12 @@ def main(args):
                                                         steps_per_epoch=len(train_dataloader),
                                                         epochs=args.num_epochs // 3)
 
-    # Start Trainig
+
+
+    # Start Training
     for epoch in tqdm(range(args.num_epochs)):
-        train_loss, pred_loss, env_loss, env_pred_loss, diff_loss, self_pred_loss, recon_diff_loss, kl_diff_loss, rank_loss, env_rank_loss, kl_loss, env_kl_loss, rank_diff_loss = train(
+        (train_loss, pred_loss, env_loss, env_pred_loss, diff_loss, self_pred_loss, recon_diff_loss,
+         kl_diff_loss, rank_loss, env_rank_loss, kl_loss, env_kl_loss, rank_diff_loss) = train(
             feature_reconstructor, feature_mask, predictor, env_predictor, train_dataloader, featrue_optimizer,
             optimizer, env_optimizer, featrue_scheduler, scheduler, env_scheduler, args, epoch=epoch)
         val_loss, val_pred_loss, val_rank_loss, val_kl_loss, avg_rankic = validate(feature_mask, predictor,
