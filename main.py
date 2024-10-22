@@ -144,6 +144,7 @@ def main(args):
         sort=False).values
     test_batch_sampler = DynamicBatchSampler(test_ds, test_batch_sizes)
 
+    print(f"train_batch_sizes={train_batch_sizes} valid_batch_sizes={valid_batch_sizes} test_batch_sizes={test_batch_sizes}")
     train_dataloader = DataLoader(train_ds, batch_sampler=train_batch_sampler, shuffle=False, num_workers=4)
     valid_dataloader = DataLoader(valid_ds, batch_sampler=valid_batch_sampler, shuffle=False, num_workers=4)
     test_dataloader = DataLoader(test_ds, batch_sampler=test_batch_sampler, shuffle=False, num_workers=4)

@@ -115,7 +115,7 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
                 total_rank_loss += rank_loss.item() * inputs.size(0)
 
                 # 裁剪梯度，max_norm 可以根据需要调整
-                torch.nn.utils.clip_grad_norm_(factorVAE.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(factorVAE.parameters(), max_norm=0.5)
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
@@ -131,7 +131,7 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
 
                 env_loss.backward()
                 # 裁剪梯度，max_norm 可以根据需要调整
-                torch.nn.utils.clip_grad_norm_(env_factorVAE.parameters(), max_norm=1.0)
+                torch.nn.utils.clip_grad_norm_(env_factorVAE.parameters(), max_norm=0.5)
 
                 # 检查每个参数的梯度是否为 NaN
                 for name, param in env_factorVAE.named_parameters():
