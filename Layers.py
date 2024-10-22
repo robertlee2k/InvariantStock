@@ -2,7 +2,30 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import DataLoader, Dataset, TensorDataset
+import pandas as pd
+
+class NaNException(Exception):
+    """自定义异常类，用于处理NaN值"""
+    pass
+
+
+def check_nan(tensor, name):
+    """
+    检查张量中是否存在NaN值，并记录相关信息。
+
+    :param tensor: 需要检查的张量
+    :param name: 张量的名称，用于记录信息
+    """
+    if torch.isnan(tensor).any():
+        print(f"警告：{name} 包含 NaN 值")
+        # 打印整个张量
+        print(f"张量 {name} 的所有行：\n{tensor}")
+        # 将包含 NaN 值的行输出到 na-values.csv
+        if isinstance(tensor, torch.Tensor):
+            tensor_df = pd.DataFrame(tensor.detach().cpu().numpy().reshape(tensor.size(0), -1))
+            tensor_df.to_csv('na-all-values.csv', index=False)
+        raise NaNException(f"{name} 包含 NaN 值")
+
 
 class FeatureReconstructor(nn.Module):
     def __init__(self, feat_dim):
@@ -29,10 +52,17 @@ class FeatureExtractor(nn.Module):
         self.gru = nn.GRU(feat_dim, hidden_dim, num_layers, batch_first=True)
         
     def forward(self, x):
+        check_nan(x, "FeatureExtractor x")
+        # 检查权重和偏置
+        linear_weights = self.linear.weight.data
+        linear_bias = self.linear.bias.data
+        check_nan(linear_weights, "Linear weights")
+        check_nan(linear_bias, "Linear bias")
 
         out = self.linear(x)
+        check_nan(out,"FeatureExtractor Linear x")
         out = self.leakyrelu(out)
-
+        check_nan(out,"FeatureExtractor leakyrelu outx")
         stock_latent, _ = self.gru(out)
         return stock_latent[:,-1,:]
     
@@ -85,8 +115,8 @@ class FactorEncoder(nn.Module):
         weights = self.softmax(weights)
         if returns.dim() == 1:
             returns = returns.unsqueeze(1)
-        portfolio_return = torch.mm(weights.transpose(1,0), returns) 
-        
+        portfolio_return = torch.mm(weights.transpose(1,0), returns)
+
         return self.mapping_layer(portfolio_return)
 
 class AlphaLayer(nn.Module):
@@ -223,10 +253,20 @@ class Predictor(nn.Module):
 
     def forward(self, x, returns):
         batch_size, seq_length, feat_dim = x.shape
+        check_nan(x, "x in factor Predictor")
         stock_latent = self.feature_extractor(x)
+        check_nan(stock_latent, "Calculated Stock latent")
+
         factor_mu, factor_sigma = self.factor_encoder(stock_latent, returns)
         reconstruction = self.factor_decoder(stock_latent, factor_mu, factor_sigma)
         pred_mu, pred_sigma = self.factor_prior_model(stock_latent)
+
+        check_nan(factor_mu, "Factor mu")
+        check_nan(factor_sigma, "Factor sigma")
+        check_nan(reconstruction, "Reconstruction")
+        check_nan(pred_mu, "Prediction mu")
+        check_nan(pred_sigma, "Prediction sigma")
+
 
         ranks = torch.ones_like(returns)
         ranks_index = torch.argsort(returns,dim=0)
@@ -235,6 +275,9 @@ class Predictor(nn.Module):
         ranks = ranks ** 2
 
         reconstruction_loss = F.mse_loss(ranks*reconstruction, ranks*returns)
+        check_nan(reconstruction_loss, "Reconstruction loss")
+
+
         if torch.any(pred_sigma == 0):
             pred_sigma[pred_sigma == 0] = 1e-6
         kl_divergence = self.KL_Divergence(factor_mu, factor_sigma, pred_mu, pred_sigma)

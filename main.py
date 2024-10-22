@@ -131,7 +131,7 @@ def main(args):
     train_ds = StockDataset(dataset, train_index)
     valid_ds = StockDataset(dataset, valid_index)
     test_ds = StockDataset(dataset, valid_index)
-    print(train_index.shape)
+
     train_batch_sizes = pd.DataFrame([i[0] for i in dataset.index[train_index[:, 0]].values]).value_counts(
         sort=False).values
     train_batch_sampler = DynamicBatchSampler(train_ds, train_batch_sizes)
@@ -254,19 +254,31 @@ if __name__ == '__main__':
     args.save_dir = args.save_dir + "/" + str(args.factor_dim)
 
     dataset = pd.read_pickle(f"{data_args.save_dir}/adataset-norm.pkl")
+
+    # 删除不想要的列
+    delete_column = ['adjustflag']
+    # 检查待删除的列是否存在于数据集中
+    existing_columns = [col for col in delete_column if col in dataset.columns]
+    if existing_columns:
+        dataset = dataset.drop(existing_columns, axis=1)
+
     # 打印包含 NaN 值的列名
     columns_with_nan = dataset.columns[dataset.isna().any()].tolist()
-    print("包含 NaN 值的列名:", columns_with_nan)
-    # 删除包含 NaN 值的列
-    dataset = dataset.drop(columns=columns_with_nan)
+    if len(columns_with_nan)>0:
+        print("包含 NaN 值的列名:", columns_with_nan)
+        # 删除包含 NaN 值的列
+        dataset = dataset.drop(columns=columns_with_nan)
+        # 打印删除后的数据集的前几行
+        print("删除包含 NaN 值 和不想要的列后的数据集，再看看有没有NaN值:")
+        # 打印包含 NaN 值的行
+        rows_with_nan = dataset[dataset.isna().any(axis=1)]
+        print("包含 NaN 值的行采样几条输出：")
+        print(rows_with_nan)
+    else:
+        print("已校验，数据集里没有NaN值,数据集描述如下")
+        print(dataset.describe())
 
-    # 打印删除后的数据集的前几行
-    print("删除包含 NaN 值的列后的数据集，再看看有没有NaN值:")
-    # 打印包含 NaN 值的行
-    rows_with_nan = dataset[dataset.isna().any(axis=1)]
-    print("包含 NaN 值的行采样几条输出：")
-    print(rows_with_nan)
-
+    print(f"数据集列名：{dataset.columns}")
 
     train_index = np.load(f"{data_args.save_dir}/train_index.npy", allow_pickle=True)
     valid_index = np.load(f"{data_args.save_dir}/valid_index.npy", allow_pickle=True)
