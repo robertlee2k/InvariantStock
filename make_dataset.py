@@ -5,23 +5,6 @@ import numpy as np
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from tqdm import tqdm
 
-
-def get_index(index,dataset,date_list):
-    try:
-        # print(f"getting training index for {index}")
-        sequence_length = 20
-        date, stock = dataset.index[index]
-        if date > date_list[-sequence_length]:
-            return None
-        date_seq = range(date_list.index(date), date_list.index(date) + sequence_length)
-        idx_list = [(date_list[i], stock) for i in date_seq]
-        if not all(i in dataset.index for i in idx_list):
-            return None
-        return np.stack([dataset.index.get_indexer(idx_list)])
-    except Exception as e:
-        print(f"Error in get_index for index {index}: {e}")
-        return None
-
 # 预处理数据结构
 def preprocess_data(dataset, date_list):
     dataset_index_set = set(dataset.index)  # 使用集合加速查找
@@ -94,9 +77,10 @@ def multi_get_index(index_list, dataset, date_list, batch_size=10000):
                 except Exception as e:
                     print(f"Error in future for batch {futures[future]}: {e}")
 
+        print(f'批次结果列表长度为: {len(final_results)}')
         # 将所有批次的结果堆叠成一个数组
         if final_results:
-            sorted_results = np.sort(final_results)
+            sorted_results = np.sort(np.concatenate(final_results))  # 合并并排序
             print(f'最终输出结果大小为: {sorted_results.shape}')
             return sorted_results
         else:
@@ -112,6 +96,7 @@ def multi_get_index(index_list, dataset, date_list, batch_size=10000):
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Process the dataset for training, validation, and testing.")
     parser.add_argument('--data_dir', type=str, default='./data', help='directory containing the data')
+    parser.add_argument('--start_date', type=str, default='2021-01-01', help='start date for training data')
     parser.add_argument('--train_date', type=str, default='2022-12-31', help='end date for training data')
     parser.add_argument('--valid_date', type=str, default='2023-12-31', help='end date for validation data')
     parser.add_argument('--test_date', type=str, default='2024-12-31', help='end date for test data')
@@ -130,11 +115,13 @@ if __name__ == "__main__":
 
     print(dataset)
 
+    start_date = pd.to_datetime(args.start_date)
     train_date = pd.to_datetime(args.train_date)
     valid_date = pd.to_datetime(args.valid_date)
     test_date = pd.to_datetime(args.test_date)
 
-    train_range = range(0, len(dataset.loc[dataset.index.get_level_values("date") <= train_date]))
+    train_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= start_date]),
+                            len(dataset.loc[dataset.index.get_level_values("date") <= train_date]))
     valid_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= train_date]),
                         len(dataset.loc[dataset.index.get_level_values("date") <= valid_date]))
     test_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= valid_date]),
@@ -148,8 +135,6 @@ if __name__ == "__main__":
     np.save(os.path.join(args.data_dir, "valid_index.npy"), np.squeeze(valid_index))
     test_index = multi_get_index([i for i in test_range],dataset,date_list)
     np.save(os.path.join(args.data_dir, "test_index.npy"), np.squeeze(test_index))
-
-
 
     print("Success!")
 
