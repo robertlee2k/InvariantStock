@@ -35,10 +35,10 @@ def rankic(df):
     print(df.head())
 
     # 确保每个日期至少有两行数据
-    date_counts = df['date'].value_counts()
+    date_counts = df.index.get_level_values('date').value_counts()
     if (date_counts < 2).any():
         valid_dates = date_counts[date_counts >= 2].index
-        df = df[df['date'].isin(valid_dates)]
+        df = df[df.index.get_level_values('date').isin(valid_dates)]
         print("确保每个日期至少有两行数据，少于两行的日期drop掉了")
     else:
         print("所有日期都有至少两行数据，无需过滤")
@@ -49,7 +49,7 @@ def rankic(df):
             return False
         return True
 
-    filtered_df = df.groupby('date').filter(check_constant)
+    filtered_df = df.groupby(level='date').filter(check_constant)
     if len(df) != len(filtered_df):
         df = filtered_df
         print("发现有日期的数据恒定，已做过滤，数据框的前几行:")
@@ -58,8 +58,8 @@ def rankic(df):
         print("所有日期的数据都不恒定，无需过滤")
 
     # 计算 IC 和 Rank IC
-    ic = df.groupby('date').apply(lambda df: df["label"].corr(df["pred"]))
-    ric = df.groupby('date').apply(lambda df: df["label"].corr(df["pred"], method="spearman"))
+    ic = df.groupby(level='date').apply(lambda df: df["label"].corr(df["pred"]))
+    ric = df.groupby(level='date').apply(lambda df: df["label"].corr(df["pred"], method="spearman"))
 
     # 输出结果
     print("计算结果:")
@@ -71,6 +71,7 @@ def rankic(df):
     })
 
     return ric
+
 
 
 
