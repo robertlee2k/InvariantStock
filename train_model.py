@@ -1,6 +1,8 @@
 import torch
 import torch.nn.functional as F
 from tqdm.auto import tqdm
+
+import Layers
 from Layers import NaNException
 import pandas as pd
 
@@ -50,9 +52,12 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
 
             loss, pred_loss, rank_loss, kl_loss, reconstruction, factor_mu, factor_sigma, pred_mu, pred_sigma = factorVAE(
                     new_features, labels)
+            Layers.check_nan(loss,"loss")
             try:
                 env_loss, env_pred_loss, env_rank_loss, env_kl_loss, env_reconstruction, env_factor_mu, env_factor_sigma, env_pred_mu, env_pred_sigma = env_factorVAE(
                     env_new_feture, labels)
+                Layers.check_nan(env_loss, "env_loss")
+
             except NaNException as nanE:
                 print("打印env数据：")
                 env_df = pd.DataFrame(env.detach().cpu().numpy().reshape(env.size(0), -1))
@@ -65,6 +70,7 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
                 env_new_feture_df.to_csv('env_new_feture.csv', index=False)
 
                 raise Exception(f"遇到 NaN 值，训练爆了")
+
 
 
             if path == 0:
@@ -94,6 +100,8 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
                 total_self_pred_loss += self_pred_loss.item() * inputs.size(0)
                 total_recon_diff_loss += recon_diff_loss.item() * inputs.size(0)
                 total_kl_diff_loss += kl_diff_loss.item() * inputs.size(0)
+
+                Layers.check_nan(diff_loss, "diff_loss")
                 diff_loss.backward()
                 featrue_optimizer.step()
                 featrue_scheduler.step()
@@ -105,6 +113,9 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
                 total_pred_loss += pred_loss.item() * inputs.size(0)
                 total_kl_loss += kl_loss.item() * inputs.size(0)
                 total_rank_loss += rank_loss.item() * inputs.size(0)
+
+                # 裁剪梯度，max_norm 可以根据需要调整
+                torch.nn.utils.clip_grad_norm_(factorVAE.parameters(), max_norm=1.0)
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
@@ -117,7 +128,15 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
                 total_env_pred_loss += env_pred_loss.item() * inputs.size(0)
                 total_env_rank_loss += env_rank_loss.item() * inputs.size(0)
                 total_env_kl_loss += env_kl_loss.item() * inputs.size(0)
+
                 env_loss.backward()
+                # 裁剪梯度，max_norm 可以根据需要调整
+                torch.nn.utils.clip_grad_norm_(env_factorVAE.parameters(), max_norm=1.0)
+
+                # 检查每个参数的梯度是否为 NaN
+                for name, param in env_factorVAE.named_parameters():
+                    if param.grad is not None and torch.isnan(param.grad).any():
+                        print(f"Gradient for {name} is NaN")
                 env_optimizer.step()
                 env_scheduler.step()
 

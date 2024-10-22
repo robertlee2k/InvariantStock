@@ -16,15 +16,15 @@ def check_nan(tensor, name):
     :param tensor: 需要检查的张量
     :param name: 张量的名称，用于记录信息
     """
-    if torch.isnan(tensor).any():
-        print(f"警告：{name} 包含 NaN 值")
-        # 打印整个张量
-        print(f"张量 {name} 的所有行：\n{tensor}")
-        # 将包含 NaN 值的行输出到 na-values.csv
-        if isinstance(tensor, torch.Tensor):
+    if isinstance(tensor, torch.Tensor):
+        if torch.isnan(tensor).any():
+            print(f"警告：{name} 包含 NaN 值")
+            # 打印整个张量
+            print(f"张量 {name} 的所有行：\n{tensor}")
+            # 将包含 NaN 值的行输出到 na-values.csv
             tensor_df = pd.DataFrame(tensor.detach().cpu().numpy().reshape(tensor.size(0), -1))
             tensor_df.to_csv('na-all-values.csv', index=False)
-        raise NaNException(f"{name} 包含 NaN 值")
+            raise NaNException(f"{name} 包含 NaN 值")
 
 
 class FeatureReconstructor(nn.Module):

@@ -236,7 +236,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='Train a predictor model on stock data')
 
     parser.add_argument('--num_epochs', type=int, default=3, help='number of epochs to train for')
-    parser.add_argument('--lr', type=float, default=0.0005, help='learning rate')
+    parser.add_argument('--lr', type=float, default=0.0001, help='learning rate') # change from 0.0005
     parser.add_argument('--batch_size', type=int, default=300, help='batch size')
     parser.add_argument('--feat_dim', type=int, default=20, help='features dimension')
     parser.add_argument('--seq_len', type=int, default=20, help='sequence length')
