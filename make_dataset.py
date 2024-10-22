@@ -96,7 +96,7 @@ def multi_get_index(index_list, dataset, date_list, batch_size=10000):
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Process the dataset for training, validation, and testing.")
     parser.add_argument('--data_dir', type=str, default='./data', help='directory containing the data')
-    parser.add_argument('--start_date', type=str, default='2021-01-01', help='start date for training data')
+    parser.add_argument('--start_date', type=str, default='2013-01-01', help='start date for training data')
     parser.add_argument('--train_date', type=str, default='2022-12-31', help='end date for training data')
     parser.add_argument('--valid_date', type=str, default='2023-12-31', help='end date for validation data')
     parser.add_argument('--test_date', type=str, default='2024-12-31', help='end date for test data')

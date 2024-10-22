@@ -6,6 +6,11 @@ import Layers
 from Layers import NaNException
 import pandas as pd
 
+def print_tensor_stats(tensor, batch_num):
+    print(f"Batch {batch_num} 输入数据分布情况 - mean: {tensor.mean().item()}, std: {tensor.std().item()}, "
+          f"min: {tensor.min().item()}, max: {tensor.max().item()}")
+
+
 def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_dataloader, featrue_optimizer, optimizer,
           env_optimizer, featrue_scheduler, scheduler, env_scheduler, args, epoch=0):
     device = args.device
@@ -30,8 +35,10 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
     total_env_kl_loss = 0
     total_rank_diff_loss = 0
     path = epoch % 3
+    batch_count = 0  # 初始化批次计数器
     with tqdm(total=len(train_dataloader)) as pbar:
         for char, returns in train_dataloader:
+            batch_count += 1  # 每次迭代时递增计数器
             if char.shape[1] != args.seq_len:
                 continue
             inputs = char.to(device)
@@ -53,17 +60,15 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
             loss, pred_loss, rank_loss, kl_loss, reconstruction, factor_mu, factor_sigma, pred_mu, pred_sigma = factorVAE(
                     new_features, labels)
             Layers.check_nan(loss,"loss")
+
+            # # 打印输入数据的描述情况
+            # print_tensor_stats(env_new_feture,batch_count)
             try:
                 env_loss, env_pred_loss, env_rank_loss, env_kl_loss, env_reconstruction, env_factor_mu, env_factor_sigma, env_pred_mu, env_pred_sigma = env_factorVAE(
                     env_new_feture, labels)
                 Layers.check_nan(env_loss, "env_loss")
 
             except NaNException as nanE:
-                print("打印env数据：")
-                env_df = pd.DataFrame(env.detach().cpu().numpy().reshape(env.size(0), -1))
-                print(env_df)
-                env_df.to_csv('env.csv', index=False)
-
                 print("打印变换后的输入矩阵:")
                 env_new_feture_df = pd.DataFrame(env_new_feture.detach().cpu().numpy().reshape(env_new_feture.size(0), -1))
                 print(env_new_feture_df)
@@ -102,6 +107,8 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
                 total_kl_diff_loss += kl_diff_loss.item() * inputs.size(0)
 
                 Layers.check_nan(diff_loss, "diff_loss")
+
+                print(f"第{epoch} 轮的第{batch_count} 个batch的loss为:{diff_loss.item()}")
                 diff_loss.backward()
                 featrue_optimizer.step()
                 featrue_scheduler.step()
@@ -115,6 +122,8 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
                 total_rank_loss += rank_loss.item() * inputs.size(0)
 
                 # 裁剪梯度，max_norm 可以根据需要调整
+                print(f"第{epoch} 轮的第{batch_count} 个batch的loss为:{loss.item()}")
+
                 torch.nn.utils.clip_grad_norm_(factorVAE.parameters(), max_norm=0.5)
                 loss.backward()
                 optimizer.step()
@@ -129,9 +138,11 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
                 total_env_rank_loss += env_rank_loss.item() * inputs.size(0)
                 total_env_kl_loss += env_kl_loss.item() * inputs.size(0)
 
+                print(f"第{epoch} 轮的第{batch_count} 个batch的loss为:{env_loss.item()}，明细为：{env_pred_loss}, {env_rank_loss}, {env_kl_loss}")
                 env_loss.backward()
+
                 # 裁剪梯度，max_norm 可以根据需要调整
-                torch.nn.utils.clip_grad_norm_(env_factorVAE.parameters(), max_norm=0.5)
+                torch.nn.utils.clip_grad_norm_(env_factorVAE.parameters(), max_norm=0.1)
 
                 # 检查每个参数的梯度是否为 NaN
                 for name, param in env_factorVAE.named_parameters():

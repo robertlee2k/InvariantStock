@@ -278,8 +278,13 @@ class Predictor(nn.Module):
         check_nan(reconstruction_loss, "Reconstruction loss")
 
 
-        if torch.any(pred_sigma == 0):
-            pred_sigma[pred_sigma == 0] = 1e-6
+        # if torch.any(pred_sigma == 0):
+        #     pred_sigma[pred_sigma == 0] = 1e-6
+
+        # 防止sigma太小导致KLDivergence过大
+        factor_sigma = torch.clamp(factor_sigma, min=1e-6)
+        pred_sigma = torch.clamp(pred_sigma, min=1e-6)
+
         kl_divergence = self.KL_Divergence(factor_mu, factor_sigma, pred_mu, pred_sigma)
         
         all_ones = torch.ones(batch_size,1).to(self.device)

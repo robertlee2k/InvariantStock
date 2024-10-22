@@ -151,7 +151,7 @@ def main(args):
     device = args.device
 
     predictor.to(device)
-    best_rankic = 0
+    best_rankic = -100
 
     featrue_optimizer = torch.optim.Adam(list(feature_reconstructor.parameters()) + list(feature_mask.parameters()),
                                          lr=args.lr)
@@ -218,7 +218,7 @@ def main(args):
             torch.save(predictor.state_dict(), predictor_root)
             torch.save(feature_mask.state_dict(), feat_mask_root)
 
-        # loading the best model for the final test set
+    # loading the best model for the final test set
     predictor.load_state_dict(torch.load(predictor_root, weights_only=True))
     feature_mask.load_state_dict(torch.load(feat_mask_root, weights_only=True))
 
