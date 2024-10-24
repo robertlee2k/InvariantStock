@@ -1,48 +1,40 @@
 import argparse
 import multiprocessing
 import os
-
 import numpy as np
 import pandas as pd
-import torch
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
-
-from Layers import FeatureReconstructor, Predictor, FeatureMask, FeatureExtractor, FactorDecoder, FactorEncoder, \
-    FatorPrior, AlphaLayer, BetaLayer
 from dataset import StockDataset, DynamicBatchSampler
-from train_model import train, validate
+from train_model import train_epoches, create_inv_predictor, create_env_predictor, create_feature_selection, \
+    ModelManager
 from utils import set_seed, DataArgument, generate_prediction_scores
 
 
-# import wandb
-
-
-def rankic(df):
+def rankic(dataframe):
     # 打印原始数据框的前几行
     print("原始数据框的前几行:")
-    print(df.head())
+    print(dataframe.head())
 
     # 检查并处理缺失值
-    if df[['label', 'pred']].isnull().any().any():
+    if dataframe[['label', 'pred']].isnull().any().any():
         print("检测到缺失值，正在处理...")
-        df = df.dropna(subset=['label', 'pred'])
+        dataframe = dataframe.dropna(subset=['label', 'pred'])
         print("缺失值处理完成，数据框的前几行:")
-        print(df.head())
+        print(dataframe.head())
     else:
         print("未检测到缺失值")
 
     # 确保数据类型为数值
-    df['label'] = df['label'].astype(float)
-    df['pred'] = df['pred'].astype(float)
+    dataframe['label'] = dataframe['label'].astype(float)
+    dataframe['pred'] = dataframe['pred'].astype(float)
     print("数据类型转换完成，数据框的前几行:")
-    print(df.head())
+    print(dataframe.head())
 
     # 确保每个日期至少有两行数据
-    date_counts = df.index.get_level_values('date').value_counts()
+    date_counts = dataframe.index.get_level_values('date').value_counts()
     if (date_counts < 2).any():
         valid_dates = date_counts[date_counts >= 2].index
-        df = df[df.index.get_level_values('date').isin(valid_dates)]
+        dataframe = dataframe[dataframe.index.get_level_values('date').isin(valid_dates)]
         print("确保每个日期至少有两行数据，少于两行的日期drop掉了")
     else:
         print("所有日期都有至少两行数据，无需过滤")
@@ -53,17 +45,17 @@ def rankic(df):
             return False
         return True
 
-    filtered_df = df.groupby(level='date').filter(check_constant)
-    if len(df) != len(filtered_df):
-        df = filtered_df
+    filtered_df = dataframe.groupby(level='date').filter(check_constant)
+    if len(dataframe) != len(filtered_df):
+        dataframe = filtered_df
         print("发现有日期的数据恒定，已做过滤，数据框的前几行:")
-        print(df.head())
+        print(dataframe.head())
     else:
         print("所有日期的数据都不恒定，无需过滤")
 
     # 计算 IC 和 Rank IC
-    ic = df.groupby(level='date').apply(lambda df: df["label"].corr(df["pred"]))
-    ric = df.groupby(level='date').apply(lambda df: df["label"].corr(df["pred"], method="spearman"))
+    ic = dataframe.groupby(level='date').apply(lambda df: df["label"].corr(df["pred"]))
+    ric = dataframe.groupby(level='date').apply(lambda df: df["label"].corr(df["pred"], method="spearman"))
 
     # 输出结果
     print("计算结果:")
@@ -98,146 +90,9 @@ def multi_add_env(dataset):
     return pd.concat(results)
 
 
-def main(args):
-    set_seed(args.seed)
-    if not os.path.exists(args.save_dir):
-        os.makedirs(args.save_dir)
-
-    # create model
-    # feature selection module
-    feature_reconstructor = FeatureReconstructor(feat_dim=args.feat_dim)
-    feature_mask = FeatureMask(feat_dim=args.feat_dim, hidden_dim=args.feat_dim)
-
-    # environment-agnostic module
-    feature_extractor = FeatureExtractor(feat_dim=args.feat_dim, hidden_dim=args.hidden_dim)
-    factor_encoder = FactorEncoder(factor_dims=args.factor_dim, num_portfolio=args.feat_dim, hidden_dim=args.hidden_dim)
-    alpha_layer = AlphaLayer(args.hidden_dim)
-    beta_layer = BetaLayer(args.hidden_dim, args.factor_dim)
-    factor_decoder = FactorDecoder(alpha_layer, beta_layer)
-    factor_prior_model = FatorPrior(args.batch_size, args.hidden_dim, args.factor_dim)
-    predictor = Predictor(feature_extractor, factor_encoder, factor_decoder, factor_prior_model, args)
-
-    # environment-awareness module
-    env_feature_extractor = FeatureExtractor(feat_dim=args.feat_dim + args.env_size, hidden_dim=args.hidden_dim)
-    env_factor_encoder = FactorEncoder(factor_dims=args.factor_dim, num_portfolio=args.feat_dim,
-                                       hidden_dim=args.hidden_dim)
-    env_alpha_layer = AlphaLayer(args.hidden_dim)
-    env_beta_layer = BetaLayer(args.hidden_dim, args.factor_dim)
-    env_factor_decoder = FactorDecoder(env_alpha_layer, env_beta_layer)
-    env_factor_prior_model = FatorPrior(args.batch_size, args.hidden_dim, args.factor_dim)
-    env_predictor = Predictor(env_feature_extractor, env_factor_encoder, env_factor_decoder, env_factor_prior_model,
-                              args)
-
-    # create dataloaders
-    # Dynamic batch size 
-    train_ds = StockDataset(dataset, train_index)
-    valid_ds = StockDataset(dataset, valid_index)
-    test_ds = StockDataset(dataset, valid_index)
-
-    train_batch_sizes = pd.DataFrame([i[0] for i in dataset.index[train_index[:, 0]].values]).value_counts(
-        sort=False).values
-    train_batch_sampler = DynamicBatchSampler(train_ds, train_batch_sizes)
-
-    valid_batch_sizes = pd.DataFrame([i[0] for i in dataset.index[valid_index[:, 0]].values]).value_counts(
-        sort=False).values
-    valid_batch_sampler = DynamicBatchSampler(valid_ds, valid_batch_sizes)
-
-    test_batch_sizes = pd.DataFrame([i[0] for i in dataset.index[test_index[:, 0]].values]).value_counts(
-        sort=False).values
-    test_batch_sampler = DynamicBatchSampler(test_ds, test_batch_sizes)
-
-    print(f"训练数据批次{len(train_batch_sizes)}, train_batch_sizes={train_batch_sizes} ")
-    print(f"验证数据批次{len(valid_batch_sizes)}, valid_batch_sizes={valid_batch_sizes} ")
-    print(f"测试数据批次{len(test_batch_sizes)}, test_batch_sizes={test_batch_sizes}")
-    train_dataloader = DataLoader(train_ds, batch_sampler=train_batch_sampler, shuffle=False, num_workers=4)
-    valid_dataloader = DataLoader(valid_ds, batch_sampler=valid_batch_sampler, shuffle=False, num_workers=4)
-    test_dataloader = DataLoader(test_ds, batch_sampler=test_batch_sampler, shuffle=False, num_workers=4)
-    device = args.device
-
-    predictor.to(device)
-    best_rankic = -100
-
-    featrue_optimizer = torch.optim.Adam(list(feature_reconstructor.parameters()) + list(feature_mask.parameters()),
-                                         lr=args.lr)
-    featrue_scheduler = torch.optim.lr_scheduler.OneCycleLR(featrue_optimizer, pct_start=0.1, max_lr=args.lr,
-                                                            steps_per_epoch=len(train_dataloader),
-                                                            epochs=args.num_epochs // 3)
-
-    optimizer = torch.optim.Adam(predictor.parameters(), lr=args.lr)
-    scheduler = torch.optim.lr_scheduler.OneCycleLR(optimizer, max_lr=args.lr, pct_start=0.1,
-                                                    steps_per_epoch=len(train_dataloader), epochs=args.num_epochs // 3)
-
-    env_optimizer = torch.optim.Adam(env_predictor.parameters(), lr=args.lr)
-    env_scheduler = torch.optim.lr_scheduler.OneCycleLR(env_optimizer, max_lr=args.lr, pct_start=0.1,
-                                                        steps_per_epoch=len(train_dataloader),
-                                                        epochs=args.num_epochs // 3)
-
-    # Start Training
-    for epoch in tqdm(range(args.num_epochs), desc=f"整体训练"):
-        (train_loss, pred_loss, env_loss, env_pred_loss, diff_loss, self_pred_loss, recon_diff_loss,
-         kl_diff_loss, rank_loss, env_rank_loss, kl_loss, env_kl_loss, rank_diff_loss) = train(
-            feature_reconstructor, feature_mask, predictor, env_predictor, train_dataloader, featrue_optimizer,
-            optimizer, env_optimizer, featrue_scheduler, scheduler, env_scheduler, args, epoch=epoch)
-        val_loss, val_pred_loss, val_rank_loss, val_kl_loss, avg_rankic = validate(feature_mask, predictor,
-                                                                                   valid_dataloader, args)
-        path = epoch % 3
-        print(f"Epoch 第{epoch + 1}轮: 参数选择训练 ",
-              {"Validation Toal Loss": round(val_loss, 6), "Validation Pred Loss": round(val_pred_loss, 6),
-               "Validation Ranking Loss": round(val_rank_loss, 6), "Validation KL Loss": round(val_kl_loss, 6),
-               "Validation RankIC": round(avg_rankic, 6)})
-        # if args.wandb:
-        #     wandb.log({"Validation Toal Loss": val_loss, "Validation Pred Loss": val_pred_loss,
-        #                "Validation Ranking Loss": val_rank_loss, "Validation KL Loss": val_kl_loss,
-        #                "Validation RankIC": avg_rankic}, step=epoch)
-        #     if path == 0:
-        #         wandb.log({"Different Loss": diff_loss, "Self Reconstruction Loss": self_pred_loss,
-        #                    "Reconstruction Diff Loss": recon_diff_loss, "KL Diff Loss": kl_diff_loss}, step=epoch)
-        #     elif path in [1]:
-        #         wandb.log({"No Env Loss": train_loss, "No Env Pred Loss": pred_loss, "No Env Ranking Loss": rank_loss,
-        #                    "No Env KL Loss": kl_loss}, step=epoch)
-        #     elif path in [2]:
-        #         wandb.log({"With Env Loss": env_loss, "With Env Pred Loss": env_pred_loss,
-        #                    "With Env Ranking Loss": env_rank_loss, "With Env KL Loss": env_kl_loss}, step=epoch)
-
-        if path == 0:
-            print(f"Epoch 第{epoch + 1}轮: 环境无关训练",
-                  {"Different Loss": round(diff_loss, 6), "Self Reconstruction Loss": round(self_pred_loss, 6),
-                   "Reconstruction Diff Loss": round(recon_diff_loss, 6), "KL Diff Loss": round(kl_diff_loss, 6),
-                   "Rank Diff Loss": round(rank_diff_loss, 6)})
-        elif path in [1]:
-            print(f"Epoch {epoch + 1}: ", {"No Env Loss": round(train_loss, 6), "No Env Pred Loss": round(pred_loss, 6),
-                                           "No Env Ranking Loss": round(rank_loss, 6),
-                                           "No Env KL Loss": round(kl_loss, 6)})
-        elif path in [2]:
-            print(f"Epoch 第{epoch + 1}轮: 环境感知训练 ",
-                  {"With Env Loss": round(env_loss, 6), "With Env Pred Loss": round(env_pred_loss, 6),
-                   "With Env Ranking Loss": round(env_rank_loss, 6), "With Env KL Loss": round(env_kl_loss, 6)})
-
-        if avg_rankic > best_rankic:
-            best_rankic = avg_rankic
-            predictor_root = os.path.join(args.save_dir, f'best_predictor_{args.run_name}_{epoch}.pt')
-            feat_mask_root = os.path.join(args.save_dir, f'best_feat_mask_{args.run_name}_{epoch}.pt')
-            torch.save(predictor.state_dict(), predictor_root)
-            torch.save(feature_mask.state_dict(), feat_mask_root)
-
-    # loading the best model for the final test set
-    predictor.load_state_dict(torch.load(predictor_root, weights_only=True))
-    feature_mask.load_state_dict(torch.load(feat_mask_root, weights_only=True))
-
-    output = generate_prediction_scores(feature_mask, predictor, test_dataloader, args)
-    output.index = dataset.index[test_index[:, -1]]
-    output["label"] = dataset.loc[output.index, 'label']
-    print("Test Result:")
-    rankic(output)
-
-    # if args.wandb:
-    #     wandb.log({"Best Validation RankIC": best_rankic})
-    #     wandb.finish()
-
-
-if __name__ == '__main__':
+def main():
     parser = argparse.ArgumentParser(description='Train a predictor model on stock data')
-
+    parser.add_argument('--train', type=bool, default=False, help='do training or do predicting')
     parser.add_argument('--num_epochs', type=int, default=12, help='number of epochs to train for')
     parser.add_argument('--lr', type=float, default=0.0005, help='learning rate')
     parser.add_argument('--batch_size', type=int, default=300, help='batch size')
@@ -252,19 +107,15 @@ if __name__ == '__main__':
     parser.add_argument('--normalize', action='store_true', help='whether to normalize the data')
     parser.add_argument('--device', default="cuda:0", type=str, help='devices')
     args = parser.parse_args()
-
     data_args = DataArgument(use_qlib=False, normalize=True, select_feature=False)
     args.save_dir = args.save_dir + "/" + str(args.factor_dim)
-
     dataset = pd.read_pickle(f"{data_args.save_dir}/adataset-norm.pkl")
-
     # 删除不想要的列
     delete_column = ['adjustflag']
     # 检查待删除的列是否存在于数据集中
     existing_columns = [col for col in delete_column if col in dataset.columns]
     if existing_columns:
         dataset = dataset.drop(existing_columns, axis=1)
-
     # 打印包含 NaN 值的列名
     columns_with_nan = dataset.columns[dataset.isna().any()].tolist()
     if len(columns_with_nan) > 0:
@@ -280,20 +131,77 @@ if __name__ == '__main__':
     else:
         print("已校验，数据集里没有NaN值,数据集描述如下")
         print(dataset.describe())
-
     print(f"数据集列名：{dataset.columns}")
-
     train_index = np.load(f"{data_args.save_dir}/train_index.npy", allow_pickle=True)
     valid_index = np.load(f"{data_args.save_dir}/valid_index.npy", allow_pickle=True)
     test_index = np.load(f"{data_args.save_dir}/test_index.npy", allow_pickle=True)
-
     args.feat_dim = len(dataset.columns) - 1
     # if args.wandb:
     #     wandb.init(project="InvariantStock", config=args, name=f"{args.run_name}")
     #     wandb.config.update(args)
-
     dataset = multi_add_env(dataset)
     dataset = dataset.astype("float")
     args.env_size = len(dataset.columns) - args.feat_dim - 1
+    set_seed(args.seed)
+    if not os.path.exists(args.save_dir):
+        os.makedirs(args.save_dir)
+    # create dataloaders
+    # Dynamic batch size
+    train_ds = StockDataset(dataset, train_index)
+    valid_ds = StockDataset(dataset, valid_index)
+    test_ds = StockDataset(dataset, valid_index)
+    train_batch_sizes = pd.DataFrame([i[0] for i in dataset.index[train_index[:, 0]].values]).value_counts(
+        sort=False).values
+    train_batch_sampler = DynamicBatchSampler(train_ds, train_batch_sizes)
+    valid_batch_sizes = pd.DataFrame([i[0] for i in dataset.index[valid_index[:, 0]].values]).value_counts(
+        sort=False).values
+    valid_batch_sampler = DynamicBatchSampler(valid_ds, valid_batch_sizes)
+    test_batch_sizes = pd.DataFrame([i[0] for i in dataset.index[test_index[:, 0]].values]).value_counts(
+        sort=False).values
+    test_batch_sampler = DynamicBatchSampler(test_ds, test_batch_sizes)
+    print(f"训练数据批次{len(train_batch_sizes)}, train_batch_sizes={train_batch_sizes} ")
+    print(f"验证数据批次{len(valid_batch_sizes)}, valid_batch_sizes={valid_batch_sizes} ")
+    print(f"测试数据批次{len(test_batch_sizes)}, test_batch_sizes={test_batch_sizes}")
+    train_dataloader = DataLoader(train_ds, batch_sampler=train_batch_sampler, shuffle=False, num_workers=4)
+    valid_dataloader = DataLoader(valid_ds, batch_sampler=valid_batch_sampler, shuffle=False, num_workers=4)
+    test_dataloader = DataLoader(test_ds, batch_sampler=test_batch_sampler, shuffle=False, num_workers=4)
+    # create model
+    feature_mask, feature_reconstructor = create_feature_selection(args)
+    # environment-agnostic module
+    predictor = create_inv_predictor(args)
+    # environment-awareness module
+    env_predictor = create_env_predictor(args)
+    device = args.device
+    feature_mask.to(device)
+    feature_reconstructor.to(device)
+    predictor.to(device)
+    env_predictor.to(device)
+    model_manager = ModelManager(save_dir=args.save_dir)
+    if args.train:
+        train_epoches(args, model_manager, env_predictor, feature_mask, feature_reconstructor, predictor,
+                      train_dataloader, valid_dataloader)
+    # 获取最佳模型的字典
+    feat_mask_dict, predictor_dict = model_manager.get_best_model_dicts()
+    # loading the best model for the final test set
+    predictor.load_state_dict(predictor_dict)
+    feature_mask.load_state_dict(feat_mask_dict)
+    output = generate_prediction_scores(feature_mask, predictor, test_dataloader, args)
+    # output 是一个带有复合索引 (date, code) 的 DataFrame
+    output.index = dataset.index[test_index[:, -1]]
+    output["label"] = dataset.loc[output.index, 'label']
+    print("Test IC Result:")
+    rankic(output)
+    # 按 date 分组，并在每个分组内根据 pred 值从大到小排序
+    output['pred_rank'] = output.groupby(level='date')['pred'].rank(ascending=False, method='first')
+    # 重置索引，将复合索引转换为普通列
+    output_reset = output.reset_index()
+    # 保存到 CSV 文件
+    output_reset.to_csv('predict_results.csv', index=False)
+    print("保存预测结果文件成功.")
+    # if args.wandb:
+    #     wandb.log({"Best Validation RankIC": best_rankic})
+    #     wandb.finish()
 
-    main(args)
+
+if __name__ == '__main__':
+    main()
