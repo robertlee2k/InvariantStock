@@ -1,16 +1,20 @@
-import multiprocessing
-import torch
-from torch.utils.data import DataLoader, Dataset, TensorDataset
-import pandas as pd
-import numpy as np
-import os
-from tqdm.auto import tqdm
 import argparse
+import multiprocessing
+import os
+
+import numpy as np
+import pandas as pd
+import torch
+from torch.utils.data import DataLoader
+from tqdm.auto import tqdm
+
 from Layers import FeatureReconstructor, Predictor, FeatureMask, FeatureExtractor, FactorDecoder, FactorEncoder, \
     FatorPrior, AlphaLayer, BetaLayer
 from dataset import StockDataset, DynamicBatchSampler
 from train_model import train, validate
 from utils import set_seed, DataArgument, generate_prediction_scores
+
+
 # import wandb
 
 
@@ -73,8 +77,6 @@ def rankic(df):
     return ric
 
 
-
-
 def add_env(date, df):
     month = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", ]
     begin_year = 2013
@@ -94,7 +96,6 @@ def multi_add_env(dataset):
     pool.join()
     results = [i for i in results if i is not None]
     return pd.concat(results)
-
 
 
 def main(args):
@@ -171,10 +172,8 @@ def main(args):
                                                         steps_per_epoch=len(train_dataloader),
                                                         epochs=args.num_epochs // 3)
 
-
-
     # Start Training
-    for epoch in tqdm(range(args.num_epochs)):
+    for epoch in tqdm(range(args.num_epochs), desc=f"整体训练"):
         (train_loss, pred_loss, env_loss, env_pred_loss, diff_loss, self_pred_loss, recon_diff_loss,
          kl_diff_loss, rank_loss, env_rank_loss, kl_loss, env_kl_loss, rank_diff_loss) = train(
             feature_reconstructor, feature_mask, predictor, env_predictor, train_dataloader, featrue_optimizer,
@@ -243,10 +242,10 @@ if __name__ == '__main__':
     parser.add_argument('--lr', type=float, default=0.0005, help='learning rate')
     parser.add_argument('--batch_size', type=int, default=300, help='batch size')
     parser.add_argument('--feat_dim', type=int, default=20, help='features dimension')
-    parser.add_argument('--seq_len', type=int, default=20, help='sequence length')
+    parser.add_argument('--seq_len', type=int, default=60, help='sequence length')
     parser.add_argument('--factor_dim', type=int, default=10, help='number of factors')
     parser.add_argument('--hidden_dim', type=int, default=20, help='hidden variables dimension')
-    parser.add_argument('--seed', type=int, default=42, help='random seed')
+    parser.add_argument('--seed', type=int, default=88, help='random seed')
     parser.add_argument('--run_name', type=str, default="Invariant", help='name of the run')
     parser.add_argument('--save_dir', type=str, default='./best_models', help='directory to save model')
     parser.add_argument('--wandb', action='store_true', help='whether to use wandb')
@@ -268,7 +267,7 @@ if __name__ == '__main__':
 
     # 打印包含 NaN 值的列名
     columns_with_nan = dataset.columns[dataset.isna().any()].tolist()
-    if len(columns_with_nan)>0:
+    if len(columns_with_nan) > 0:
         print("包含 NaN 值的列名:", columns_with_nan)
         # 删除包含 NaN 值的列
         dataset = dataset.drop(columns=columns_with_nan)
@@ -287,8 +286,6 @@ if __name__ == '__main__':
     train_index = np.load(f"{data_args.save_dir}/train_index.npy", allow_pickle=True)
     valid_index = np.load(f"{data_args.save_dir}/valid_index.npy", allow_pickle=True)
     test_index = np.load(f"{data_args.save_dir}/test_index.npy", allow_pickle=True)
-
-
 
     args.feat_dim = len(dataset.columns) - 1
     # if args.wandb:

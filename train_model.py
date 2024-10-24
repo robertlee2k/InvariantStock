@@ -1,10 +1,11 @@
+import pandas as pd
 import torch
 import torch.nn.functional as F
 from tqdm.auto import tqdm
 
 import Layers
 from Layers import NaNException
-import pandas as pd
+
 
 def print_tensor_stats(tensor, batch_num):
     print(f"Batch {batch_num} 输入数据分布情况 - mean: {tensor.mean().item()}, std: {tensor.std().item()}, "
@@ -36,10 +37,11 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
     total_rank_diff_loss = 0
     path = epoch % 3
     batch_count = 0  # 初始化批次计数器
-    with tqdm(total=len(train_dataloader)) as pbar:
+    with tqdm(total=len(train_dataloader), desc=f"第{epoch}轮训练ing") as pbar:
         for char, returns in train_dataloader:
             batch_count += 1  # 每次迭代时递增计数器
             if char.shape[1] != args.seq_len:
+                print(f"训练数据形状{char.shape[1]}与 设定的序列长度{args.seq_len}不匹配，跳过该批次")
                 continue
             inputs = char.to(device)
             labels = returns[:, -1].reshape(-1, 1).to(device)
@@ -58,8 +60,8 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
             batch_size = inputs.shape[0]
 
             loss, pred_loss, rank_loss, kl_loss, reconstruction, factor_mu, factor_sigma, pred_mu, pred_sigma = factorVAE(
-                    new_features, labels)
-            Layers.check_nan(loss,"loss")
+                new_features, labels)
+            Layers.check_nan(loss, "loss")
 
             # # 打印输入数据的描述情况
             # print_tensor_stats(env_new_feture,batch_count)
@@ -70,13 +72,12 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
 
             except NaNException as nanE:
                 print("打印变换后的输入矩阵:")
-                env_new_feture_df = pd.DataFrame(env_new_feture.detach().cpu().numpy().reshape(env_new_feture.size(0), -1))
+                env_new_feture_df = pd.DataFrame(
+                    env_new_feture.detach().cpu().numpy().reshape(env_new_feture.size(0), -1))
                 print(env_new_feture_df)
                 env_new_feture_df.to_csv('env_new_feture.csv', index=False)
 
                 raise Exception(f"遇到 NaN 值，训练爆了")
-
-
 
             if path == 0:
                 # feature selection
@@ -180,7 +181,7 @@ def validate(feature_mask, factorVAE, dataloader, args):
     total_rank_loss = 0
     total_env_kl_loss = 0
     total_rankic = 0
-    with tqdm(total=len(dataloader)) as pbar:
+    with tqdm(total=len(dataloader), desc=f"验证阶段") as pbar:
         for char, returns in dataloader:
             if char.shape[1] != args.seq_len:
                 continue
