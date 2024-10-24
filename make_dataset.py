@@ -1,9 +1,11 @@
-import os
 import argparse
-import pandas as pd
-import numpy as np
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+import numpy as np
+import pandas as pd
 from tqdm import tqdm
+
 
 # 预处理数据结构
 def preprocess_data(dataset, date_list):
@@ -12,10 +14,10 @@ def preprocess_data(dataset, date_list):
     dataset_index = pd.Index(dataset.index)  # 使用 pandas Index 类
     return dataset_index_set, date_to_index, dataset_index
 
+
 # 优化后的 get_index_batch 函数
-def get_index_batch(batch, dataset_index_set, date_to_index, dataset_index, date_list):
+def get_index_batch(batch, dataset_index_set, date_to_index, dataset_index, date_list, sequence_length):
     try:
-        sequence_length = 20
         results = []
 
         for index in batch:
@@ -46,8 +48,9 @@ def get_index_batch(batch, dataset_index_set, date_to_index, dataset_index, date
         print(f"Error in get_index_batch: {e}")
         return None
 
+
 # 多线程处理
-def multi_get_index(index_list, dataset, date_list, batch_size=10000):
+def multi_get_index(index_list, dataset, date_list, seq_length, batch_size=10000):
     try:
         # 获取 CPU 核心数并设置线程数为 CPU 核心数减 1
         num_threads = max(1, os.cpu_count() - 1)
@@ -65,7 +68,9 @@ def multi_get_index(index_list, dataset, date_list, batch_size=10000):
         with ThreadPoolExecutor(max_workers=num_threads) as executor:
             print(f"Submitting tasks for {len(batches)} batches...")
             # 提交任务并获取未来对象
-            futures = {executor.submit(get_index_batch, batch, dataset_index_set, date_to_index, dataset_index, date_list): batch for batch in tqdm(batches, desc="Submitting batches")}
+            futures = {
+                executor.submit(get_index_batch, batch, dataset_index_set, date_to_index, dataset_index, date_list,
+                                seq_length): batch for batch in tqdm(batches, desc="Submitting batches")}
 
             print("Processing batches...")
             # 获取结果并显示进度条
@@ -91,7 +96,6 @@ def multi_get_index(index_list, dataset, date_list, batch_size=10000):
         return np.array([])
 
 
-
 # Define argparse
 def parse_arguments():
     parser = argparse.ArgumentParser(description="Process the dataset for training, validation, and testing.")
@@ -100,8 +104,9 @@ def parse_arguments():
     parser.add_argument('--train_date', type=str, default='2022-12-31', help='end date for training data')
     parser.add_argument('--valid_date', type=str, default='2023-12-31', help='end date for validation data')
     parser.add_argument('--test_date', type=str, default='2024-12-31', help='end date for test data')
-    parser.add_argument('--seq_len', type=int, default=20, help='sequence length for processing')
+    parser.add_argument('--seq_len', type=int, default=60, help='sequence length for processing')
     return parser.parse_args()
+
 
 if __name__ == "__main__":
     args = parse_arguments()
@@ -119,22 +124,24 @@ if __name__ == "__main__":
     train_date = pd.to_datetime(args.train_date)
     valid_date = pd.to_datetime(args.valid_date)
     test_date = pd.to_datetime(args.test_date)
+    seq_length = args.seq_len
+    print(f"训练序列长度为: {seq_length}；训练日期为: {start_date}；结束日期为: {train_date}；"
+          f"验证日期: {valid_date}；测试日期: {test_date}")
 
     train_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= start_date]),
-                            len(dataset.loc[dataset.index.get_level_values("date") <= train_date]))
+                        len(dataset.loc[dataset.index.get_level_values("date") <= train_date]))
     valid_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= train_date]),
                         len(dataset.loc[dataset.index.get_level_values("date") <= valid_date]))
     test_range = range(len(dataset.loc[dataset.index.get_level_values("date") <= valid_date]),
                        len(dataset))
 
-    date_list = list(dataset.index.get_level_values("date").unique())
+    dates_list = list(dataset.index.get_level_values("date").unique())
 
-    train_index = multi_get_index([i for i in train_range],dataset,date_list)
+    train_index = multi_get_index([i for i in train_range], dataset, dates_list, seq_length)
     np.save(os.path.join(args.data_dir, "train_index.npy"), np.squeeze(train_index))
-    valid_index = multi_get_index([i for i in valid_range],dataset,date_list)
+    valid_index = multi_get_index([i for i in valid_range], dataset, dates_list, seq_length)
     np.save(os.path.join(args.data_dir, "valid_index.npy"), np.squeeze(valid_index))
-    test_index = multi_get_index([i for i in test_range],dataset,date_list)
+    test_index = multi_get_index([i for i in test_range], dataset, dates_list, seq_length)
     np.save(os.path.join(args.data_dir, "test_index.npy"), np.squeeze(test_index))
 
     print("Success!")
-
