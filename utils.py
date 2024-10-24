@@ -143,8 +143,8 @@ class ModelManager:
             raise FileNotFoundError(f"CSV file {self.csv_path} does not exist.")
 
         df = pd.read_csv(self.csv_path, encoding='utf8')
-        predictor_root = df['predictor_root'].iloc[0]
-        feat_mask_root = df['feat_mask_root'].iloc[0]
+        predictor_root = os.path.join(self.save_dir, df['predictor_root'].iloc[0])
+        feat_mask_root = os.path.join(self.save_dir, df['feat_mask_root'].iloc[0])
 
         predictor_dict = torch.load(predictor_root, weights_only=True)
         feat_mask_dict = torch.load(feat_mask_root, weights_only=True)

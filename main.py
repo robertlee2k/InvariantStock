@@ -105,9 +105,10 @@ def main():
     parser.add_argument('--wandb', action='store_true', help='whether to use wandb')
     parser.add_argument('--normalize', action='store_true', help='whether to normalize the data')
     parser.add_argument('--device', default="cuda:0", type=str, help='devices')
-    args = parser.parse_args()
+
+    #TODO data_args needed to be removed
     data_args = DataArgument(use_qlib=False, normalize=True, select_feature=False)
-    args.save_dir = args.save_dir + "/" + str(args.factor_dim)
+
     dataset = pd.read_pickle(f"{data_args.save_dir}/adataset-norm.pkl")
     # 删除不想要的列
     delete_column = ['adjustflag']
@@ -134,6 +135,9 @@ def main():
     train_index = np.load(f"{data_args.save_dir}/train_index.npy", allow_pickle=True)
     valid_index = np.load(f"{data_args.save_dir}/valid_index.npy", allow_pickle=True)
     test_index = np.load(f"{data_args.save_dir}/test_index.npy", allow_pickle=True)
+
+    args = parser.parse_args()
+    args.save_dir = args.save_dir + "/" + str(args.factor_dim)
     args.feat_dim = len(dataset.columns) - 1
     # if args.wandb:
     #     wandb.init(project="InvariantStock", config=args, name=f"{args.run_name}")
