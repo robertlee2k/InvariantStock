@@ -1,12 +1,11 @@
 import pandas as pd
-import torch
 import numpy as np
 import random
 import os
 from dataclasses import dataclass, field
 from Layers import *
 from tqdm.auto import tqdm
-
+import torch
 
 def set_seed(seed):
     random.seed(seed)
@@ -113,3 +112,41 @@ class test_args:
     save_dir = './best_model'
     use_qlib: bool = False
     device = "cuda:0"
+
+
+class ModelManager:
+    def __init__(self, save_dir):
+        self.save_dir = save_dir
+        self.best_rankic = -float('inf')
+        self.csv_path = os.path.join(save_dir, 'best_model.csv')
+
+    def save_model_if_better(self, predictor, feature_mask, run_name, epoch, rankic):
+        if rankic > self.best_rankic:
+            self.best_rankic = rankic
+            predictor_root = os.path.join(self.save_dir, f'best_predictor_{run_name}_{epoch}.pt')
+            feat_mask_root = os.path.join(self.save_dir, f'best_feat_mask_{run_name}_{epoch}.pt')
+
+            torch.save(predictor.state_dict(), predictor_root)
+            torch.save(feature_mask.state_dict(), feat_mask_root)
+
+            # 更新 best_model.csv
+            model_info = {
+                'predictor_root': [predictor_root],
+                'feat_mask_root': [feat_mask_root],
+                'rankic': [rankic]
+            }
+            df = pd.DataFrame(model_info)
+            df.to_csv(self.csv_path, index=False, header=True)
+
+    def get_best_model_dicts(self):
+        if not os.path.exists(self.csv_path):
+            raise FileNotFoundError(f"CSV file {self.csv_path} does not exist.")
+
+        df = pd.read_csv(self.csv_path, encoding='utf8')
+        predictor_root = df['predictor_root'].iloc[0]
+        feat_mask_root = df['feat_mask_root'].iloc[0]
+
+        predictor_dict = torch.load(predictor_root, weights_only=True)
+        feat_mask_dict = torch.load(feat_mask_root, weights_only=True)
+
+        return feat_mask_dict, predictor_dict

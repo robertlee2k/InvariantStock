@@ -5,9 +5,8 @@ import numpy as np
 import pandas as pd
 from torch.utils.data import DataLoader
 from dataset import StockDataset, DynamicBatchSampler
-from train_model import train_epoches, create_inv_predictor, create_env_predictor, create_feature_selection, \
-    ModelManager
-from utils import set_seed, DataArgument, generate_prediction_scores
+from train_model import train_epoches, create_inv_predictor, create_env_predictor, create_feature_selection
+from utils import set_seed, DataArgument, generate_prediction_scores,ModelManager
 
 
 def rankic(dataframe):
