@@ -138,7 +138,8 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
                 total_env_rank_loss += env_rank_loss.item() * inputs.size(0)
                 total_env_kl_loss += env_kl_loss.item() * inputs.size(0)
 
-                print(f"第{epoch} 轮的第{batch_count} 个batch的loss为:{env_loss.item()}，明细为：{env_pred_loss}, {env_rank_loss}, {env_kl_loss}")
+                print(f"第{epoch} 轮的第{batch_count} 个batch的环境感知loss为:{env_loss.item()}")
+                print(f"      其中：重建损失为：{env_pred_loss}, 排序损失为：{env_rank_loss}, KL损失为：{env_kl_loss}")
                 env_loss.backward()
 
                 # 裁剪梯度，max_norm 可以根据需要调整

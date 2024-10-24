@@ -145,7 +145,9 @@ def main(args):
         sort=False).values
     test_batch_sampler = DynamicBatchSampler(test_ds, test_batch_sizes)
 
-    print(f"train_batch_sizes={train_batch_sizes} valid_batch_sizes={valid_batch_sizes} test_batch_sizes={test_batch_sizes}")
+    print(f"训练数据批次{len(train_batch_sizes)}, train_batch_sizes={train_batch_sizes} ")
+    print(f"验证数据批次{len(valid_batch_sizes)}, valid_batch_sizes={valid_batch_sizes} ")
+    print(f"测试数据批次{len(test_batch_sizes)}, test_batch_sizes={test_batch_sizes}")
     train_dataloader = DataLoader(train_ds, batch_sampler=train_batch_sampler, shuffle=False, num_workers=4)
     valid_dataloader = DataLoader(valid_ds, batch_sampler=valid_batch_sampler, shuffle=False, num_workers=4)
     test_dataloader = DataLoader(test_ds, batch_sampler=test_batch_sampler, shuffle=False, num_workers=4)
@@ -180,7 +182,7 @@ def main(args):
         val_loss, val_pred_loss, val_rank_loss, val_kl_loss, avg_rankic = validate(feature_mask, predictor,
                                                                                    valid_dataloader, args)
         path = epoch % 3
-        print(f"Epoch {epoch + 1}: ",
+        print(f"Epoch 第{epoch + 1}轮: 参数选择训练 ",
               {"Validation Toal Loss": round(val_loss, 6), "Validation Pred Loss": round(val_pred_loss, 6),
                "Validation Ranking Loss": round(val_rank_loss, 6), "Validation KL Loss": round(val_kl_loss, 6),
                "Validation RankIC": round(avg_rankic, 6)})
@@ -199,7 +201,7 @@ def main(args):
         #                    "With Env Ranking Loss": env_rank_loss, "With Env KL Loss": env_kl_loss}, step=epoch)
 
         if path == 0:
-            print(f"Epoch {epoch + 1}: ",
+            print(f"Epoch 第{epoch + 1}轮: 环境无关训练",
                   {"Different Loss": round(diff_loss, 6), "Self Reconstruction Loss": round(self_pred_loss, 6),
                    "Reconstruction Diff Loss": round(recon_diff_loss, 6), "KL Diff Loss": round(kl_diff_loss, 6),
                    "Rank Diff Loss": round(rank_diff_loss, 6)})
@@ -208,7 +210,7 @@ def main(args):
                                            "No Env Ranking Loss": round(rank_loss, 6),
                                            "No Env KL Loss": round(kl_loss, 6)})
         elif path in [2]:
-            print(f"Epoch {epoch + 1}: ",
+            print(f"Epoch 第{epoch + 1}轮: 环境感知训练 ",
                   {"With Env Loss": round(env_loss, 6), "With Env Pred Loss": round(env_pred_loss, 6),
                    "With Env Ranking Loss": round(env_rank_loss, 6), "With Env KL Loss": round(env_kl_loss, 6)})
 
