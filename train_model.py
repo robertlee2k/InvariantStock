@@ -76,7 +76,7 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
             self_recondstruction = feature_reconstructor(new_features)
 
             if torch.isnan(torch.sum(new_features)):
-                print(epoch)
+                print(f"警告：{epoch}轮的第 {batch_count}批环境无关数据new_feature包含NaN值")
 
             env = inputs[:, :, -args.env_size:]
             env_new_feture = torch.cat([new_features, env], dim=-1)
@@ -147,7 +147,7 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
 
                 # 裁剪梯度，max_norm 可以根据需要调整
                 print(f"第{epoch} 轮的第{batch_count} 个batch的loss为:{loss.item()}")
-                torch.nn.utils.clip_grad_norm_(factorVAE.parameters(), max_norm=0.5)
+                torch.nn.utils.clip_grad_norm_(factorVAE.parameters(), max_norm=1)
                 loss.backward()
                 optimizer.step()
                 scheduler.step()
@@ -165,7 +165,7 @@ def train(feature_reconstructor, feature_mask, factorVAE, env_factorVAE, train_d
                 env_loss.backward()
 
                 # 裁剪梯度，max_norm 可以根据需要调整
-                torch.nn.utils.clip_grad_norm_(env_factorVAE.parameters(), max_norm=0.1)
+                torch.nn.utils.clip_grad_norm_(env_factorVAE.parameters(), max_norm=1)
 
                 # 检查每个参数的梯度是否为 NaN
                 for name, param in env_factorVAE.named_parameters():
