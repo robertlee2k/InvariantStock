@@ -7,7 +7,7 @@ from torch.utils.data import DataLoader
 from dataset import StockDataset, DynamicBatchSampler
 from train_model import train_epoches, create_inv_predictor, create_env_predictor, create_feature_selection
 from utils import set_seed, DataArgument, generate_prediction_scores,ModelManager
-
+import wandb
 
 def rankic(dataframe):
     # 打印原始数据框的前几行
@@ -102,7 +102,7 @@ def main():
     parser.add_argument('--seed', type=int, default=88, help='random seed')
     parser.add_argument('--run_name', type=str, default="Invariant", help='name of the run')
     parser.add_argument('--save_dir', type=str, default='./best_models', help='directory to save model')
-    parser.add_argument('--wandb', action='store_true', help='whether to use wandb')
+    parser.add_argument('--wandb', action='store_false', default=True, help='whether to use wandb')
     parser.add_argument('--normalize', action='store_true', help='whether to normalize the data')
     parser.add_argument('--device', default="cuda:0", type=str, help='devices')
 
@@ -139,9 +139,10 @@ def main():
     args = parser.parse_args()
     args.save_dir = args.save_dir + "/" + str(args.factor_dim)
     args.feat_dim = len(dataset.columns) - 1
-    # if args.wandb:
-    #     wandb.init(project="InvariantStock", config=args, name=f"{args.run_name}")
-    #     wandb.config.update(args)
+    if args.wandb:
+        print("初始化 wandb")
+        wandb.init(project="InvariantStock", config=args, name=f"{args.run_name}")
+        wandb.config.update(args)
     dataset = multi_add_env(dataset)
     dataset = dataset.astype("float")
     args.env_size = len(dataset.columns) - args.feat_dim - 1
@@ -201,9 +202,9 @@ def main():
     # 保存到 CSV 文件
     output_reset.to_csv('predict_results.csv', index=False)
     print("保存预测结果文件成功.")
-    # if args.wandb:
-    #     wandb.log({"Best Validation RankIC": best_rankic})
-    #     wandb.finish()
+    if args.wandb:
+        wandb.log({"Best Validation RankIC": best_rankic})
+        wandb.finish()
 
 
 if __name__ == '__main__':

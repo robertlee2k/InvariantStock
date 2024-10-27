@@ -2,7 +2,7 @@ import pandas as pd
 import torch
 import torch.nn.functional as F
 from tqdm.auto import tqdm
-
+import wandb
 from Layers import FeatureReconstructor, Predictor, FeatureMask, FeatureExtractor, FactorDecoder, FactorEncoder, \
     FatorPrior, AlphaLayer, BetaLayer
 
@@ -324,19 +324,19 @@ def train_epoches(args, model_manager, env_predictor, feature_mask, feature_reco
               {"Validation Toal Loss": round(val_loss, 6), "Validation Pred Loss": round(val_pred_loss, 6),
                "Validation Ranking Loss": round(val_rank_loss, 6), "Validation KL Loss": round(val_kl_loss, 6),
                "Validation RankIC": round(avg_rankic, 6)})
-        # if args.wandb:
-        #     wandb.log({"Validation Toal Loss": val_loss, "Validation Pred Loss": val_pred_loss,
-        #                "Validation Ranking Loss": val_rank_loss, "Validation KL Loss": val_kl_loss,
-        #                "Validation RankIC": avg_rankic}, step=epoch)
-        #     if path == 0:
-        #         wandb.log({"Different Loss": diff_loss, "Self Reconstruction Loss": self_pred_loss,
-        #                    "Reconstruction Diff Loss": recon_diff_loss, "KL Diff Loss": kl_diff_loss}, step=epoch)
-        #     elif path in [1]:
-        #         wandb.log({"No Env Loss": train_loss, "No Env Pred Loss": pred_loss, "No Env Ranking Loss": rank_loss,
-        #                    "No Env KL Loss": kl_loss}, step=epoch)
-        #     elif path in [2]:
-        #         wandb.log({"With Env Loss": env_loss, "With Env Pred Loss": env_pred_loss,
-        #                    "With Env Ranking Loss": env_rank_loss, "With Env KL Loss": env_kl_loss}, step=epoch)
+        if args.wandb:
+            wandb.log({"Validation Toal Loss": val_loss, "Validation Pred Loss": val_pred_loss,
+                       "Validation Ranking Loss": val_rank_loss, "Validation KL Loss": val_kl_loss,
+                       "Validation RankIC": avg_rankic}, step=epoch)
+            if path == 0:
+                wandb.log({"Different Loss": diff_loss, "Self Reconstruction Loss": self_pred_loss,
+                           "Reconstruction Diff Loss": recon_diff_loss, "KL Diff Loss": kl_diff_loss}, step=epoch)
+            elif path in [1]:
+                wandb.log({"No Env Loss": train_loss, "No Env Pred Loss": pred_loss, "No Env Ranking Loss": rank_loss,
+                           "No Env KL Loss": kl_loss}, step=epoch)
+            elif path in [2]:
+                wandb.log({"With Env Loss": env_loss, "With Env Pred Loss": env_pred_loss,
+                           "With Env Ranking Loss": env_rank_loss, "With Env KL Loss": env_kl_loss}, step=epoch)
 
         if path == 0:
             print(f"Epoch 第{epoch + 1}轮: 参数选择训练损失",
