@@ -157,6 +157,7 @@ class StockDataFetcher:
 
         print("添加label字段.....")
         # 添加'label'字段
+        # TODO 虽然pctChg一般是-10到10之间的数值，但这里应该还是要做normalization比较好
         full_dataset['label'] = full_dataset.groupby('code')['pctChg'].shift(-1)
 
         # 筛选出将要被前向填充的行
